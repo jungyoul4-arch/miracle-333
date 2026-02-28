@@ -1,7 +1,35 @@
-// K1 SPORTS 체대입시 분석 시스템 — 프론트엔드 v3
-// 수능 실시간 조정 + 시뮬레이션 모드 + 합격선 자동 추천
+// K1 SPORTS 체대입시 분석 시스템 — 프론트엔드 v5
+// Premium UI: 다크/라이트 모드 + 스크롤 리빌 + 스켈레톤 로딩
 
 const API = '';
+
+// ═══ 테마 관리 (다크/라이트 모드) ═══
+function getTheme() {
+  return localStorage.getItem('k1-theme') || 'dark';
+}
+function setTheme(theme) {
+  localStorage.setItem('k1-theme', theme);
+  document.documentElement.setAttribute('data-theme', theme);
+}
+function toggleTheme() {
+  const next = getTheme() === 'dark' ? 'light' : 'dark';
+  setTheme(next);
+  render();
+}
+
+// ═══ 스크롤 리빌 (IntersectionObserver) ═══
+function initScrollReveal() {
+  if (!('IntersectionObserver' in window)) return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+}
 
 // 디바운스 유틸리티
 function debounce(fn, ms) {
@@ -714,7 +742,15 @@ function subjectOptions(list, selected) {
 function showToast(msg) {
   state.toast = msg;
   renderToast();
-  setTimeout(() => { state.toast = null; const t = document.getElementById('toast'); if (t) t.remove(); }, 3000);
+  setTimeout(() => {
+    const t = document.getElementById('toast');
+    if (t) {
+      t.classList.add('toast-exit');
+      setTimeout(() => { state.toast = null; t.remove(); }, 300);
+    } else {
+      state.toast = null;
+    }
+  }, 2700);
 }
 function renderToast() {
   let t = document.getElementById('toast');
@@ -731,6 +767,8 @@ function render() {
   const app = document.getElementById('app');
   app.innerHTML = renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
   bindEvents();
+  // 스크롤 리빌 초기화 (약간의 지연으로 DOM 렌더링 보장)
+  requestAnimationFrame(() => initScrollReveal());
 }
 
 function renderHeader() {
@@ -758,7 +796,12 @@ function renderHeader() {
           <i class="fas fa-cog"></i> 관리자
         </button>
       </nav>
-      <div class="status-dot"><span>실시간 계산</span></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="status-dot"><span>실시간 계산</span></div>
+        <button class="theme-toggle" id="btn-theme" title="테마 변경">
+          <i class="fas fa-${getTheme() === 'dark' ? 'sun' : 'moon'}"></i>
+        </button>
+      </div>
     </div>
   </header>`;
 }
@@ -782,7 +825,24 @@ function renderMobileNav() {
 }
 
 function renderContent() {
-  if (state.loading) return '<div class="loading"><div class="loading-spinner"></div><div style="color:var(--muted);font-size:14px">230개+ 대학 분석 중...</div></div>';
+  if (state.loading) return `
+    <div class="loading" style="padding:40px 0">
+      <div class="loading-spinner"></div>
+      <div style="color:var(--muted);font-size:14px;font-weight:600;margin-bottom:32px">230개+ 대학 분석 중...</div>
+      <div class="loading-skeleton">
+        <div class="skeleton skeleton-row" style="height:48px;width:60%;margin:0 auto"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;max-width:600px;margin:0 auto">
+          <div class="skeleton skeleton-card" style="min-height:80px"></div>
+          <div class="skeleton skeleton-card" style="min-height:80px;animation-delay:0.1s"></div>
+          <div class="skeleton skeleton-card" style="min-height:80px;animation-delay:0.2s"></div>
+          <div class="skeleton skeleton-card" style="min-height:80px;animation-delay:0.3s"></div>
+        </div>
+        <div class="skeleton skeleton-row" style="animation-delay:0.1s"></div>
+        <div class="skeleton skeleton-row" style="animation-delay:0.2s"></div>
+        <div class="skeleton skeleton-row" style="animation-delay:0.3s"></div>
+        <div class="skeleton skeleton-row" style="animation-delay:0.4s"></div>
+      </div>
+    </div>`;
   switch (state.tab) {
     case 'input': return renderInput();
     case 'result': return renderResult();
@@ -801,7 +861,7 @@ function renderInput() {
   const extraSports = SPORTS_FIELDS.slice(10);
 
   return `
-  <div class="section-title"><span>수능 성적 입력</span></div>
+  <div class="section-title reveal"><span>수능 성적 입력</span></div>
   <div class="score-grid">
     <!-- 국어 -->
     <div class="score-card" style="border:1px solid rgba(0,212,255,0.25)">
@@ -906,7 +966,7 @@ function renderInput() {
     </div>
   </div>
 
-  <div class="section-title"><span>실기 기록 입력</span></div>
+  <div class="section-title reveal"><span>실기 기록 입력</span></div>
   <div class="card" style="margin-bottom:32px">
     <div style="font-size:12px;color:var(--muted);margin-bottom:20px;padding:10px 14px;background:var(--surface);border-radius:8px;line-height:1.6">
       <i class="fas fa-info-circle" style="color:var(--accent);margin-right:4px"></i>
@@ -949,7 +1009,13 @@ function renderSlider(f, value) {
 // ═══ 화면 2: 전체 결과 ═══
 // ════════════════════════════════════════════
 function renderResult() {
-  if (!state.results) return '<div style="text-align:center;padding:60px;color:var(--muted)"><i class="fas fa-chart-bar" style="font-size:40px;display:block;margin-bottom:16px;opacity:0.3"></i>먼저 성적을 입력하고 분석하기를 클릭하세요.</div>';
+  if (!state.results) return `
+    <div class="empty-state">
+      <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
+      <div class="empty-state-title">아직 분석 결과가 없어요</div>
+      <div class="empty-state-desc">성적을 입력하고 분석하기를 클릭하면<br>전국 230개+ 대학의 합격 가능성을 즉시 확인할 수 있어요</div>
+      <button class="empty-state-cta" data-tab="input"><i class="fas fa-edit"></i> 성적 입력하러 가기</button>
+    </div>`;
   
   const { summary, results } = state.results;
   const f = state.filters;
@@ -1032,7 +1098,12 @@ function renderResult() {
   </div>
 
   <div class="result-list">
-    ${filtered.length > 0 ? filtered.map(r => renderResultRow(r)).join('') : '<div style="text-align:center;padding:40px;color:var(--muted)">조건에 맞는 대학이 없습니다.</div>'}
+    ${filtered.length > 0 ? filtered.map(r => renderResultRow(r)).join('') : `
+      <div class="empty-state" style="padding:40px 20px">
+        <div class="empty-state-icon" style="width:64px;height:64px;font-size:24px"><i class="fas fa-search"></i></div>
+        <div class="empty-state-title">조건에 맞는 대학이 없어요</div>
+        <div class="empty-state-desc">필터 조건을 변경하거나 검색어를 수정해보세요</div>
+      </div>`}
   </div>`;
 }
 
@@ -1081,7 +1152,13 @@ function renderResultRow(r) {
 // ════════════════════════════════════════════
 function renderDetail() {
   const u = state.selectedUniv;
-  if (!u) return '<div style="text-align:center;padding:60px;color:var(--muted)"><i class="fas fa-school" style="font-size:40px;display:block;margin-bottom:16px;opacity:0.3"></i>전체 결과에서 학교를 선택해주세요.</div>';
+  if (!u) return `
+    <div class="empty-state">
+      <div class="empty-state-icon"><i class="fas fa-school"></i></div>
+      <div class="empty-state-title">학교를 선택해주세요</div>
+      <div class="empty-state-desc">전체 결과에서 관심있는 대학을 클릭하면<br>상세 분석과 시뮬레이션을 확인할 수 있어요</div>
+      ${state.results ? '<button class="empty-state-cta" data-tab="result"><i class="fas fa-list"></i> 결과 목록 보기</button>' : '<button class="empty-state-cta" data-tab="input"><i class="fas fa-edit"></i> 성적 입력하러 가기</button>'}
+    </div>`;
   
   const statusMap = { '지원가능': '가능', '소신지원': '소신', '지원위험': '위험', '지원불가': '불가' };
 
@@ -2603,6 +2680,12 @@ function bindEvents() {
   // 시뮬레이션 바 이벤트
   bindSimBarEvents();
 
+  // 테마 토글
+  const btnTheme = document.getElementById('btn-theme');
+  if (btnTheme) {
+    btnTheme.addEventListener('click', toggleTheme);
+  }
+
   // 관리자 로그인
   const btnAdminLogin = document.getElementById('btn-admin-login');
   if (btnAdminLogin) {
@@ -2661,5 +2744,7 @@ function bindEvents() {
 
 // ── 초기화 ──
 document.addEventListener('DOMContentLoaded', () => {
+  // 테마 초기화
+  setTheme(getTheme());
   render();
 });

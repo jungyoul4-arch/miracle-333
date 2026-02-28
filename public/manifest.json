@@ -1,11 +1,11 @@
 {
-  "name": "Q&A 튜터링",
-  "short_name": "Q&A",
-  "description": "학생들을 위한 1:1 질문답변 & 튜터링 플랫폼",
+  "name": "K1 SPORTS 체대입시 분석",
+  "short_name": "K1 SPORTS",
+  "description": "전국 230개+ 대학 체육 관련 학과의 합격·불합격 여부를 즉시 판정하는 분석 시스템",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#141414",
-  "theme_color": "#141414",
+  "background_color": "#050A14",
+  "theme_color": "#050A14",
   "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
