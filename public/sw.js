@@ -1,8 +1,7 @@
-// Q&A Tutoring PWA - Service Worker
-const CACHE_VERSION = 'qa-v1';
+// K1 SPORTS 체대입시 분석 PWA - Service Worker
+const CACHE_VERSION = 'k1-v2';
 const STATIC_CACHE = CACHE_VERSION + '-static';
 const DYNAMIC_CACHE = CACHE_VERSION + '-dynamic';
-const IMAGE_CACHE = CACHE_VERSION + '-images';
 
 // Static assets to pre-cache on install
 const STATIC_ASSETS = [
@@ -36,7 +35,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE && key !== IMAGE_CACHE)
+        keys.filter((key) => key !== STATIC_CACHE && key !== DYNAMIC_CACHE)
           .map((key) => caches.delete(key))
       );
     }).then(() => self.clients.claim())
@@ -50,14 +49,8 @@ self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
   
-  // API calls: Network first, no cache (except images)
+  // API calls: Network only (fresh data)
   if (url.pathname.startsWith('/api/')) {
-    // R2 images: Cache first (they don't change)
-    if (url.pathname.startsWith('/api/images/')) {
-      event.respondWith(cacheFirst(event.request, IMAGE_CACHE, 30 * 24 * 60 * 60));
-      return;
-    }
-    // Other API: Network only (fresh data)
     return;
   }
   

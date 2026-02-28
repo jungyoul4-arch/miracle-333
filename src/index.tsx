@@ -44,6 +44,7 @@ app.post('/api/calculate/all', async (c) => {
 // ── 학교 상세 API ──
 app.get('/api/universities/:id', (c) => {
   const id = parseInt(c.req.param('id'));
+  if (isNaN(id)) return c.json({ error: 'Invalid ID' }, 400);
   const univ = universities.find(u => u.id === id);
   if (!univ) return c.json({ error: 'Not found' }, 404);
   return c.json(univ);
@@ -196,7 +197,7 @@ function getMainHTML() {
   <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
   <link href="/static/styles.css" rel="stylesheet">
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#09090b">
+  <meta name="theme-color" content="#050A14">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>

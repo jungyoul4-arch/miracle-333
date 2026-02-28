@@ -89,7 +89,7 @@ const SCORE_TABLES = {
   '화1': { 50:69, 47:67, 41:62, 37:58, 32:54, 23:47, 15:40, 11:37, 6:33, 0:20 },
   '생1': { 50:69, 47:66, 42:62, 39:59, 32:53, 27:48, 20:42, 14:36, 9:32, 0:20 },
   '지1': { 50:66, 47:64, 45:63, 42:60, 35:55, 22:46, 14:40, 9:37, 7:35, 0:20 },
-  '물2': { 50:63, 50:63, 48:62, 44:60, 38:56, 21:45, 13:40, 9:37, 6:35, 0:20 },
+  '물2': { 50:63, 48:62, 44:60, 38:56, 21:45, 13:40, 9:37, 6:35, 0:20 },
   '화2': { 50:63, 48:62, 44:60, 38:56, 21:45, 13:40, 9:37, 6:35, 0:20 },
   '생2': { 50:63, 48:62, 44:60, 38:56, 21:45, 13:40, 9:37, 6:35, 0:20 },
   '지2': { 50:63, 48:62, 44:60, 38:56, 21:45, 13:40, 9:37, 6:35, 0:20 }
@@ -378,8 +378,8 @@ function findSportsField(eventName) {
 }
 
 const SUBJECTS_INQUIRY = [
-  '생윤', '윤사', '한지', '세지', '사문', '정법', '경제',
-  '생과1', '화학1', '물리1', '지학1', '생과2', '화학2', '물리2', '지학2',
+  '생윤', '윤사', '한지', '세지', '동사', '세사', '사문', '정법', '경제',
+  '물1', '화1', '생1', '지1', '물2', '화2', '생2', '지2',
   '직업탐구'
 ];
 
@@ -2583,11 +2583,13 @@ function bindEvents() {
           body: JSON.stringify({ student: state.student })
         });
         if (!res.ok) throw new Error('서버 응답 오류');
-        state.results = await res.json();
+        const data = await res.json();
+        if (!data || !data.results) throw new Error('응답 데이터 형식 오류');
+        state.results = data;
         state.tab = 'result';
         showToast(`${state.results.results.length}개 대학 분석 완료!`);
       } catch (e) {
-        alert('계산 중 오류가 발생했습니다: ' + e.message);
+        showToast('계산 중 오류가 발생했습니다: ' + e.message);
       }
       
       state.loading = false;
@@ -2598,7 +2600,8 @@ function bindEvents() {
   // 결과 행 클릭 → 상세
   document.querySelectorAll('.result-row').forEach(row => {
     row.addEventListener('click', () => {
-      const uid = parseInt(row.dataset.uid);
+      const uid = parseInt(row.dataset.uid, 10);
+      if (!state.results || !state.results.results) return;
       state.selectedUniv = state.results.results.find(r => r.university_id === uid);
       state.simSports = {};
       state.simSuneung = null;
@@ -2703,7 +2706,7 @@ function bindEvents() {
         showToast('관리자 로그인 성공!');
         render();
       } else {
-        alert('비밀번호가 틀렸습니다.');
+        showToast('비밀번호가 틀렸습니다.');
       }
     });
     const pwInput = document.getElementById('admin-pw');
