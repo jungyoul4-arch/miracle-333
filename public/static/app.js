@@ -1,7 +1,27 @@
-// K1 SPORTS 체대입시 분석 시스템 — 프론트엔드 v5
-// Premium UI: 다크/라이트 모드 + 스크롤 리빌 + 스켈레톤 로딩
+// K1 SPORTS 체대입시 분석 시스템 — 프론트엔드 v6
+// Premium UI + Stability: XSS방지, 중복제출방지, 입력검증, 에러핸들링
 
 const API = '';
+
+// ═══ 전역 에러 핸들러 ═══
+window.onerror = function(msg, src, line, col, err) {
+  console.error('[K1] Uncaught error:', msg, 'at', src, line, col);
+  return false;
+};
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('[K1] Unhandled promise rejection:', e.reason);
+});
+
+// ═══ XSS 방지 유틸리티 ═══
+function escapeHtml(str) {
+  if (typeof str !== 'string') return String(str);
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ═══ 숫자 클램핑 유틸리티 ═══
+function clamp(val, min, max) {
+  return Math.min(Math.max(val, min), max);
+}
 
 // ═══ 테마 관리 (다크/라이트 모드) ═══
 function getTheme() {
@@ -180,6 +200,46 @@ const state = {
   simBaseScore: null,     // 시뮬레이션 시작 시점의 기준 수능 환산점수
   simOriginalStudent: null // 시뮬레이션 시작 시점의 원본 학생 데이터
 };
+
+// ═══ 프론트엔드 입력 검증 ═══
+// API 전송 전 학생 성적 데이터의 범위와 타입을 검증/보정
+function validateStudentInput(s) {
+  return {
+    korean: {
+      subject: String(s.korean.subject || '언매'),
+      standard: clamp(Number(s.korean.standard) || 0, 0, 200),
+      percentile: clamp(Number(s.korean.percentile) || 0, 0, 100),
+      grade: clamp(Math.round(Number(s.korean.grade) || 5), 1, 9)
+    },
+    math: {
+      subject: String(s.math.subject || '확통'),
+      standard: clamp(Number(s.math.standard) || 0, 0, 200),
+      percentile: clamp(Number(s.math.percentile) || 0, 0, 100),
+      grade: clamp(Math.round(Number(s.math.grade) || 5), 1, 9)
+    },
+    english: {
+      grade: clamp(Math.round(Number(s.english.grade) || 5), 1, 9)
+    },
+    inquiry1: {
+      subject: String(s.inquiry1.subject || '생윤'),
+      standard: clamp(Number(s.inquiry1.standard) || 0, 0, 100),
+      percentile: clamp(Number(s.inquiry1.percentile) || 0, 0, 100),
+      grade: clamp(Math.round(Number(s.inquiry1.grade) || 5), 1, 9)
+    },
+    inquiry2: {
+      subject: String(s.inquiry2.subject || '윤사'),
+      standard: clamp(Number(s.inquiry2.standard) || 0, 0, 100),
+      percentile: clamp(Number(s.inquiry2.percentile) || 0, 0, 100),
+      grade: clamp(Math.round(Number(s.inquiry2.grade) || 5), 1, 9)
+    },
+    hanksa: {
+      grade: clamp(Math.round(Number(s.hanksa.grade) || 4), 1, 9)
+    },
+    sports: Object.fromEntries(
+      Object.entries(s.sports || {}).map(([k, v]) => [k, Number(v) || 0])
+    )
+  };
+}
 
 // ── 실기 종목 정의 (메인 입력 화면에서 사용하는 기준 정의) ──
 // ★ 이 단위가 절대 기준입니다. 시뮬레이터에서도 반드시 이 단위를 사용합니다.
@@ -734,7 +794,7 @@ function generateCutlineAdvice(univ) {
 
 // ── 유틸 ──
 function gradeOptions(selected) {
-  return [1,2,3,4,5,6,7,8,9].map(g => `<option value="${g}" ${g == selected ? 'selected' : ''}>${g}등급</option>`).join('');
+  return [1,2,3,4,5,6,7,8,9].map(g => `<option value="${g}" ${g === Number(selected) ? 'selected' : ''}>${g}등급</option>`).join('');
 }
 function subjectOptions(list, selected) {
   return list.map(s => `<option ${s === selected ? 'selected' : ''}>${s}</option>`).join('');
@@ -758,17 +818,22 @@ function renderToast() {
   if (!state.toast) return;
   const d = document.createElement('div');
   d.id = 'toast'; d.className = 'toast';
-  d.innerHTML = `<i class="fas fa-check-circle"></i> ${state.toast}`;
+  d.innerHTML = `<i class="fas fa-check-circle"></i> ${escapeHtml(state.toast)}`;
   document.body.appendChild(d);
 }
 
 // ── 메인 렌더링 ──
 function render() {
-  const app = document.getElementById('app');
-  app.innerHTML = renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
-  bindEvents();
-  // 스크롤 리빌 초기화 (약간의 지연으로 DOM 렌더링 보장)
-  requestAnimationFrame(() => initScrollReveal());
+  try {
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.innerHTML = renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
+    bindEvents();
+    // 스크롤 리빌 초기화 (약간의 지연으로 DOM 렌더링 보장)
+    requestAnimationFrame(() => initScrollReveal());
+  } catch (e) {
+    console.error('[K1] Render error:', e);
+  }
 }
 
 function renderHeader() {
@@ -2569,18 +2634,19 @@ function bindEvents() {
     });
   });
 
-  // 분석하기 버튼
+  // 분석하기 버튼 (중복 제출 방지)
   const btnAnalyze = document.getElementById('btn-analyze');
   if (btnAnalyze) {
     btnAnalyze.addEventListener('click', async () => {
+      if (state.loading) return; // 중복 제출 방지
       state.loading = true;
       render();
-      
+
       try {
         const res = await fetch(API + '/api/calculate/all', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ student: state.student })
+          body: JSON.stringify({ student: validateStudentInput(state.student) })
         });
         if (!res.ok) throw new Error('서버 응답 오류');
         const data = await res.json();
@@ -2591,7 +2657,7 @@ function bindEvents() {
       } catch (e) {
         showToast('계산 중 오류가 발생했습니다: ' + e.message);
       }
-      
+
       state.loading = false;
       render();
     });
@@ -2674,7 +2740,7 @@ function bindEvents() {
         inq2Raw: state.student.inquiry2.raw || 0
       };
       state.simBaseScore = u.my_suneung_score;
-      state.simOriginalStudent = JSON.parse(JSON.stringify(state.student));
+      try { state.simOriginalStudent = JSON.parse(JSON.stringify(state.student)); } catch(e) { state.simOriginalStudent = null; }
       showToast('시뮬레이션 모드가 시작되었습니다. 슬라이더로 점수를 조정하세요!');
       render();
     });
@@ -2693,13 +2759,16 @@ function bindEvents() {
   const btnAdminLogin = document.getElementById('btn-admin-login');
   if (btnAdminLogin) {
     btnAdminLogin.addEventListener('click', async () => {
-      const pw = document.getElementById('admin-pw').value;
+      const pwEl = document.getElementById('admin-pw');
+      if (!pwEl) return;
+      const pw = pwEl.value;
       if (pw === 'k1sports' || pw === 'admin') {
         state.admin.loggedIn = true;
         try {
           const res = await fetch(API + '/api/universities');
+          if (!res.ok) throw new Error('서버 응답 오류');
           const data = await res.json();
-          state.admin.universities = data.universities;
+          state.admin.universities = data.universities || [];
         } catch (e) {
           state.admin.universities = [];
         }

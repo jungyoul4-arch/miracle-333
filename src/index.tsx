@@ -7,6 +7,58 @@ const app = new Hono();
 
 app.use('/api/*', cors());
 
+// ── 입력 검증 유틸 ──
+function clampNum(v: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(v);
+  if (isNaN(n)) return fallback;
+  return Math.min(Math.max(n, min), max);
+}
+
+function validateStudent(raw: any): StudentScore | null {
+  if (!raw || typeof raw !== 'object') return null;
+  try {
+    return {
+      korean: {
+        subject: String(raw.korean?.subject || ''),
+        standard: clampNum(raw.korean?.standard, 0, 200, 0),
+        percentile: clampNum(raw.korean?.percentile, 0, 100, 0),
+        grade: clampNum(raw.korean?.grade, 1, 9, 5),
+      },
+      math: {
+        subject: String(raw.math?.subject || ''),
+        standard: clampNum(raw.math?.standard, 0, 200, 0),
+        percentile: clampNum(raw.math?.percentile, 0, 100, 0),
+        grade: clampNum(raw.math?.grade, 1, 9, 5),
+      },
+      english: {
+        grade: clampNum(raw.english?.grade, 1, 9, 5),
+      },
+      inquiry1: {
+        subject: String(raw.inquiry1?.subject || ''),
+        standard: clampNum(raw.inquiry1?.standard, 0, 100, 0),
+        percentile: clampNum(raw.inquiry1?.percentile, 0, 100, 0),
+        grade: clampNum(raw.inquiry1?.grade, 1, 9, 5),
+      },
+      inquiry2: {
+        subject: String(raw.inquiry2?.subject || ''),
+        standard: clampNum(raw.inquiry2?.standard, 0, 100, 0),
+        percentile: clampNum(raw.inquiry2?.percentile, 0, 100, 0),
+        grade: clampNum(raw.inquiry2?.grade, 1, 9, 5),
+      },
+      hanksa: {
+        grade: clampNum(raw.hanksa?.grade, 1, 9, 4),
+      },
+      sports: (raw.sports && typeof raw.sports === 'object')
+        ? Object.fromEntries(
+            Object.entries(raw.sports).map(([k, v]) => [String(k), Number(v) || 0])
+          )
+        : {},
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── 전체 대학 목록 API ──
 app.get('/api/universities', (c) => {
   const list = universities
@@ -33,8 +85,10 @@ app.get('/api/universities', (c) => {
 // ── 전체 합불 판정 API ──
 app.post('/api/calculate/all', async (c) => {
   try {
-    const body = await c.req.json<{ student: StudentScore }>();
-    const result = calculateAll(body.student);
+    const body = await c.req.json<{ student: any }>();
+    const student = validateStudent(body.student);
+    if (!student) return c.json({ error: '잘못된 입력 데이터 형식입니다.' }, 400);
+    const result = calculateAll(student);
     return c.json(result);
   } catch (e: any) {
     return c.json({ error: e.message || 'Calculation error' }, 400);
@@ -55,15 +109,21 @@ app.post('/api/calculate/simulate', async (c) => {
   try {
     const body = await c.req.json<{
       university_id: number;
-      student: StudentScore;
+      student: any;
       sports_override?: Record<string, number>;
     }>();
 
-    const univ = universities.find(u => u.id === body.university_id);
+    const student = validateStudent(body.student);
+    if (!student) return c.json({ error: '잘못된 입력 데이터 형식입니다.' }, 400);
+
+    const univId = Number(body.university_id);
+    if (isNaN(univId)) return c.json({ error: '잘못된 대학 ID입니다.' }, 400);
+
+    const univ = universities.find(u => u.id === univId);
     if (!univ) return c.json({ error: 'University not found' }, 404);
 
     // 수능 환산점수 계산
-    const mySuneungScore = calcSuneungScore(body.student, univ);
+    const mySuneungScore = calcSuneungScore(student, univ);
     const cutline = univ.cutline_suneung || 0;
     const diff = Math.round((mySuneungScore - cutline) * 100) / 100;
     const status = getAdmissionStatus(mySuneungScore, cutline);
@@ -71,7 +131,7 @@ app.post('/api/calculate/simulate', async (c) => {
     // 실기 종목별 정보
     const sportsBreakdown = (univ.sports_events || []).map(eventName => {
       const overrideVal = body.sports_override?.[eventName];
-      const studentVal = body.student.sports[eventName] || 0;
+      const studentVal = student.sports[eventName] || 0;
       const myScore = overrideVal !== undefined ? overrideVal : studentVal;
 
       return {
@@ -85,24 +145,24 @@ app.post('/api/calculate/simulate', async (c) => {
     const suneungBreakdown: Record<string, any> = {};
     if (univ.korean_yn) {
       suneungBreakdown.korean = {
-        raw_standard: body.student.korean.standard,
-        raw_percentile: body.student.korean.percentile,
+        raw_standard: student.korean.standard,
+        raw_percentile: student.korean.percentile,
         ratio: univ.korean_ratio,
         points: univ.korean_points,
       };
     }
     if (univ.math_yn) {
       suneungBreakdown.math = {
-        raw_standard: body.student.math.standard,
-        raw_percentile: body.student.math.percentile,
-        subject: body.student.math.subject,
+        raw_standard: student.math.standard,
+        raw_percentile: student.math.percentile,
+        subject: student.math.subject,
         bonus: univ.math_bonus,
         ratio: univ.math_ratio,
         points: univ.math_points,
       };
     }
     if (univ.english_yn) {
-      const engGrade = Math.min(Math.max(body.student.english.grade, 1), 9);
+      const engGrade = Math.min(Math.max(student.english.grade, 1), 9);
       suneungBreakdown.english = {
         grade: engGrade,
         method: univ.english_method,
@@ -111,12 +171,12 @@ app.post('/api/calculate/simulate', async (c) => {
     }
     if (univ.inquiry_yn) {
       suneungBreakdown.inquiry = {
-        subject1: body.student.inquiry1.subject,
-        standard1: body.student.inquiry1.standard,
-        percentile1: body.student.inquiry1.percentile,
-        subject2: body.student.inquiry2.subject,
-        standard2: body.student.inquiry2.standard,
-        percentile2: body.student.inquiry2.percentile,
+        subject1: student.inquiry1.subject,
+        standard1: student.inquiry1.standard,
+        percentile1: student.inquiry1.percentile,
+        subject2: student.inquiry2.subject,
+        standard2: student.inquiry2.standard,
+        percentile2: student.inquiry2.percentile,
         ratio: univ.inquiry_ratio,
         points: univ.inquiry_points,
       };
