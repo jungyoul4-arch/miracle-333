@@ -371,55 +371,88 @@ const state = {
   recordSort: { key: null, asc: true },
   recordFilter: { school: '전체', grades: [1, 2, 3], search: '' },
   editingCell: null, // { recordId, colKey }
-  // 역할 관리
-  currentUser: loadCurrentUser()
+  // 학생 모의고사 편집 모드
+  studentMockEditing: false,
+  // 로그인 관리
+  currentUser: loadCurrentUser(),
+  loginError: ''
 };
 
-// ── 역할 LocalStorage ──
+// ═══ 로그인 시스템 ═══
+// 테스트 학생 계정
+const TEST_STUDENTS = [
+  { id: 'student-001', loginId: 'kimminsu', password: '1234', name: '김민수', school: 'OO고등학교', grade: 2, class: '3' },
+  { id: 'student-002', loginId: 'leejieun', password: '1234', name: '이지은', school: '△△고등학교', grade: 2, class: '1' },
+  { id: 'student-003', loginId: 'parkjunyoung', password: '1234', name: '박준영', school: '□□고등학교', grade: 3, class: '2' }
+];
+const ADMIN_ACCOUNT = { loginId: 'admin', password: 'admin1234', role: 'admin' };
+
 function loadCurrentUser() {
   try {
     const raw = localStorage.getItem('k1-current-user');
-    return raw ? JSON.parse(raw) : { role: 'admin', studentId: null, studentName: null };
-  } catch { return { role: 'admin', studentId: null, studentName: null }; }
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
 }
 function saveCurrentUser() {
-  localStorage.setItem('k1-current-user', JSON.stringify(state.currentUser));
+  if (state.currentUser) {
+    localStorage.setItem('k1-current-user', JSON.stringify(state.currentUser));
+  } else {
+    localStorage.removeItem('k1-current-user');
+  }
 }
-function isAdmin() { return state.currentUser.role === 'admin'; }
-function isStudent() { return state.currentUser.role === 'student'; }
+function isLoggedIn() { return state.currentUser !== null; }
+function isAdmin() { return state.currentUser && state.currentUser.role === 'admin'; }
+function isStudent() { return state.currentUser && state.currentUser.role === 'student'; }
+function logout() {
+  state.currentUser = null;
+  saveCurrentUser();
+  state.loginError = '';
+  render();
+}
+function attemptLogin(loginId, password) {
+  if (loginId === ADMIN_ACCOUNT.loginId && password === ADMIN_ACCOUNT.password) {
+    state.currentUser = { role: 'admin', loginId: 'admin' };
+    saveCurrentUser();
+    state.loginError = '';
+    return true;
+  }
+  const student = TEST_STUDENTS.find(s => s.loginId === loginId && s.password === password);
+  if (student) {
+    state.currentUser = {
+      role: 'student',
+      studentId: student.id,
+      loginId: student.loginId,
+      studentName: student.name,
+      school: student.school,
+      grade: student.grade,
+      class: student.class
+    };
+    saveCurrentUser();
+    state.loginError = '';
+    return true;
+  }
+  return false;
+}
 
 // 학생이 편집 가능한 필드
 const STUDENT_EDITABLE_FIELDS = ['mockExamGrade', 'koreanScore', 'mathScore', 'englishGrade'];
 
-// 전체 세션에서 등록된 모든 학생 목록 (중복 제거)
-function getAllStudents() {
-  const map = new Map();
-  state.sessions.forEach(s => {
-    (s.records || []).forEach(r => {
-      if (r.studentName && !map.has(r.id)) {
-        map.set(r.id, { id: r.id, name: r.studentName, school: r.school, grade: r.grade });
-      }
-    });
-  });
-  return Array.from(map.values());
-}
-
-// 현재 선택된 학생의 현재 세션 기록 찾기
+// 현재 로그인한 학생의 현재 세션 기록 찾기
 function getMyRecord(sessionId) {
-  if (!state.currentUser.studentId) return null;
+  if (!state.currentUser || !state.currentUser.studentId) return null;
   const records = getSessionRecords(sessionId);
-  return records.find(r => r.id === state.currentUser.studentId) || null;
+  return records.find(r => r.id === state.currentUser.studentId || r.studentName === state.currentUser.studentName) || null;
 }
 
 // 이전 차시에서 같은 학생 기록 찾기
 function getPreviousSessionRecord(currentSessionId) {
   const currentSession = state.sessions.find(s => s.id === currentSessionId);
-  if (!currentSession || !state.currentUser.studentId) return null;
+  if (!currentSession || !state.currentUser || !state.currentUser.studentId) return null;
   const sorted = state.sessions.slice().sort((a, b) => b.number - a.number);
   const idx = sorted.findIndex(s => s.id === currentSessionId);
   const prevSession = sorted[idx + 1];
   if (!prevSession) return null;
-  return (prevSession.records || []).find(r => r.id === state.currentUser.studentId) || null;
+  return (prevSession.records || []).find(r => r.id === state.currentUser.studentId || r.studentName === state.currentUser.studentName) || null;
 }
 
 // ═══ 프론트엔드 입력 검증 ═══
@@ -1049,16 +1082,32 @@ function render() {
     const app = document.getElementById('app');
     if (!app) return;
 
-    // 최상위 네비게이션에 따라 분기
-    if (state.mainTab === 'analysis') {
-      // 기존 분석 시스템 — 그대로 유지
-      app.innerHTML = renderMainNav() + renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
-    } else if (state.mainTab === 'report') {
-      app.innerHTML = renderMainNav() + '<main class="main">' + renderReportPage() + '</main>' + renderMobileNavMain();
-    } else {
-      // records — 역할에 따라 관리자 뷰 / 학생 뷰 분기
-      const recordsContent = isAdmin() ? renderRecordsPage() : renderStudentRecordsPage();
-      app.innerHTML = renderMainNav() + '<main class="main">' + recordsContent + '</main>' + renderMobileNavMain();
+    // 로그인 안 되어 있으면 로그인 화면
+    if (!isLoggedIn()) {
+      app.innerHTML = renderLoginPage();
+      bindLoginEvents();
+      return;
+    }
+
+    // 관리자 앱
+    if (isAdmin()) {
+      if (state.mainTab === 'analysis') {
+        app.innerHTML = renderAdminNav() + renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
+      } else if (state.mainTab === 'report') {
+        app.innerHTML = renderAdminNav() + '<main class="main">' + renderReportPage() + '</main>' + renderMobileNavMain();
+      } else {
+        app.innerHTML = renderAdminNav() + '<main class="main">' + renderRecordsPage() + '</main>' + renderMobileNavMain();
+      }
+    }
+    // 학생 앱
+    else if (isStudent()) {
+      if (state.mainTab === 'analysis') {
+        app.innerHTML = renderStudentNav() + '<main class="main">' + renderStudentAnalysisPage() + '</main>' + renderStudentMobileNav();
+      } else if (state.mainTab === 'report') {
+        app.innerHTML = renderStudentNav() + '<main class="main">' + renderStudentReportPage() + '</main>' + renderStudentMobileNav();
+      } else {
+        app.innerHTML = renderStudentNav() + '<main class="main">' + renderStudentRecordsPage() + '</main>' + renderStudentMobileNav();
+      }
     }
     bindEvents();
     requestAnimationFrame(() => initScrollReveal());
@@ -1067,41 +1116,65 @@ function render() {
   }
 }
 
-// ═══ 최상위 메인 네비게이션 ═══
-function renderMainNav() {
-  const admin = isAdmin();
-  const students = getAllStudents();
-  const cu = state.currentUser;
-
-  // 역할별 메뉴 이름
-  const menuRecords = admin ? '비공식 기록' : '나의 기록';
-  const menuAnalysis = admin ? '분석 시스템' : '나의 분석 결과';
-  const menuReport = admin ? '리포트' : '나의 리포트';
-
-  // 역할 전환 UI
-  const roleUI = admin
-    ? `<div class="role-badge role-admin"><i class="fas fa-user-shield"></i> 관리자</div>`
-    : `<div class="role-badge role-student"><i class="fas fa-user-graduate"></i> ${escapeHtml(cu.studentName || '학생')}</div>`;
-
-  const roleSwitcher = `
-    <div class="role-switcher" id="role-switcher">
-      ${roleUI}
-      <div class="role-dropdown" id="role-dropdown">
-        <div class="role-dropdown-header">역할 전환</div>
-        <button class="role-option ${admin ? 'active' : ''}" data-role-switch="admin">
-          <i class="fas fa-user-shield"></i> 관리자 모드
-        </button>
-        <div class="role-dropdown-divider"></div>
-        <div class="role-dropdown-header">학생 모드</div>
-        ${students.length === 0
-          ? '<div class="role-dropdown-empty">등록된 학생이 없습니다</div>'
-          : students.map(s => `
-            <button class="role-option ${!admin && cu.studentId === s.id ? 'active' : ''}" data-role-switch="student" data-role-student-id="${s.id}" data-role-student-name="${escapeHtml(s.name)}">
-              <i class="fas fa-user"></i> ${escapeHtml(s.name)} <span class="role-option-sub">${escapeHtml(s.school || '')} ${s.grade || ''}학년</span>
-            </button>`).join('')}
+// ═══ 로그인 페이지 ═══
+function renderLoginPage() {
+  return `
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-icon" style="width:56px;height:56px;font-size:20px">K1</div>
+        <div class="login-title">K1 SPORTS</div>
+        <div class="login-subtitle">체대입시 분석 시스템</div>
       </div>
-    </div>`;
+      <form class="login-form" id="login-form">
+        <div class="login-field">
+          <label class="login-label"><i class="fas fa-user"></i> 아이디</label>
+          <input type="text" class="login-input" id="login-id" placeholder="아이디를 입력하세요" autocomplete="username" autofocus>
+        </div>
+        <div class="login-field">
+          <label class="login-label"><i class="fas fa-lock"></i> 비밀번호</label>
+          <input type="password" class="login-input" id="login-pw" placeholder="비밀번호를 입력하세요" autocomplete="current-password">
+        </div>
+        ${state.loginError ? `<div class="login-error"><i class="fas fa-exclamation-circle"></i> ${escapeHtml(state.loginError)}</div>` : ''}
+        <button type="submit" class="login-btn"><i class="fas fa-sign-in-alt"></i> 로그인</button>
+      </form>
+      <div class="login-info">
+        <div class="login-info-title">테스트 계정</div>
+        <div class="login-info-row"><span>학생:</span> kimminsu / 1234</div>
+        <div class="login-info-row"><span>학생:</span> leejieun / 1234</div>
+        <div class="login-info-row"><span>학생:</span> parkjunyoung / 1234</div>
+        <div class="login-info-row"><span>관리자:</span> admin / admin1234</div>
+      </div>
+    </div>
+  </div>`;
+}
 
+function bindLoginEvents() {
+  const form = document.getElementById('login-form');
+  if (form) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const loginId = document.getElementById('login-id').value.trim();
+      const password = document.getElementById('login-pw').value;
+      if (!loginId || !password) {
+        state.loginError = '아이디와 비밀번호를 입력해주세요.';
+        render();
+        return;
+      }
+      const success = attemptLogin(loginId, password);
+      if (success) {
+        state.mainTab = 'records';
+        render();
+      } else {
+        state.loginError = '아이디 또는 비밀번호가 올바르지 않습니다.';
+        render();
+      }
+    });
+  }
+}
+
+// ═══ 관리자 네비게이션 ═══
+function renderAdminNav() {
   return `
   <div class="main-nav-bar">
     <div class="main-nav-inner">
@@ -1114,17 +1187,22 @@ function renderMainNav() {
       </div>
       <nav class="main-nav-tabs">
         <button class="main-nav-btn ${state.mainTab === 'records' ? 'active' : ''}" data-main-tab="records">
-          <i class="fas fa-clipboard-list"></i> <span>${menuRecords}</span>
+          <i class="fas fa-clipboard-list"></i> <span>비공식 기록</span>
         </button>
         <button class="main-nav-btn ${state.mainTab === 'analysis' ? 'active' : ''}" data-main-tab="analysis">
-          <i class="fas fa-chart-bar"></i> <span>${menuAnalysis}</span>
+          <i class="fas fa-chart-bar"></i> <span>분석 시스템</span>
         </button>
         <button class="main-nav-btn ${state.mainTab === 'report' ? 'active' : ''}" data-main-tab="report">
-          <i class="fas fa-chart-line"></i> <span>${menuReport}</span>
+          <i class="fas fa-chart-line"></i> <span>리포트</span>
         </button>
       </nav>
       <div style="display:flex;align-items:center;gap:8px">
-        ${roleSwitcher}
+        <div class="user-profile" id="user-profile">
+          <div class="user-profile-badge admin-badge"><i class="fas fa-user-shield"></i> 관리자 <i class="fas fa-chevron-down" style="font-size:10px;margin-left:4px"></i></div>
+          <div class="user-profile-dropdown" id="user-profile-dropdown">
+            <button class="user-profile-option" id="btn-logout"><i class="fas fa-sign-out-alt"></i> 로그아웃</button>
+          </div>
+        </div>
         <button class="theme-toggle" id="btn-theme" title="테마 변경">
           <i class="fas fa-${getTheme() === 'dark' ? 'sun' : 'moon'}"></i>
         </button>
@@ -1133,19 +1211,78 @@ function renderMainNav() {
   </div>`;
 }
 
-// 모바일 하단 네비 (비공식 기록/리포트용 — 최상위 탭)
-function renderMobileNavMain() {
-  const admin = isAdmin();
+// ═══ 학생 네비게이션 ═══
+function renderStudentNav() {
+  const cu = state.currentUser;
+  return `
+  <div class="main-nav-bar">
+    <div class="main-nav-inner">
+      <div class="logo" style="cursor:pointer" id="logo-home">
+        <div class="logo-icon">K1</div>
+        <div class="logo-text">
+          <div class="logo-title">체대입시 분석 시스템</div>
+          <div class="logo-sub">K1 SPORTS &middot; 2027학년도 정시</div>
+        </div>
+      </div>
+      <nav class="main-nav-tabs">
+        <button class="main-nav-btn ${state.mainTab === 'records' ? 'active' : ''}" data-main-tab="records">
+          <i class="fas fa-clipboard-list"></i> <span>나의 기록</span>
+        </button>
+        <button class="main-nav-btn ${state.mainTab === 'analysis' ? 'active' : ''}" data-main-tab="analysis">
+          <i class="fas fa-chart-bar"></i> <span>나의 분석 결과</span>
+        </button>
+        <button class="main-nav-btn ${state.mainTab === 'report' ? 'active' : ''}" data-main-tab="report">
+          <i class="fas fa-chart-line"></i> <span>나의 리포트</span>
+        </button>
+      </nav>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="user-profile" id="user-profile">
+          <div class="user-profile-badge student-badge"><i class="fas fa-user-graduate"></i> ${escapeHtml(cu.studentName || '학생')} <i class="fas fa-chevron-down" style="font-size:10px;margin-left:4px"></i></div>
+          <div class="user-profile-dropdown" id="user-profile-dropdown">
+            <div class="user-profile-info">
+              <div class="user-profile-name">${escapeHtml(cu.studentName || '')}</div>
+              <div class="user-profile-detail">${escapeHtml(cu.school || '')} ${cu.grade || ''}학년 ${cu.class ? cu.class + '반' : ''}</div>
+            </div>
+            <div class="user-profile-divider"></div>
+            <button class="user-profile-option" id="btn-logout"><i class="fas fa-sign-out-alt"></i> 로그아웃</button>
+          </div>
+        </div>
+        <button class="theme-toggle" id="btn-theme" title="테마 변경">
+          <i class="fas fa-${getTheme() === 'dark' ? 'sun' : 'moon'}"></i>
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 학생 모바일 하단 네비
+function renderStudentMobileNav() {
   return `
   <div class="mobile-nav">
     <button class="mobile-nav-btn ${state.mainTab === 'records' ? 'active' : ''}" data-main-tab="records">
-      <i class="fas fa-clipboard-list"></i><span>${admin ? '비공식 기록' : '나의 기록'}</span>
+      <i class="fas fa-clipboard-list"></i><span>나의 기록</span>
     </button>
     <button class="mobile-nav-btn ${state.mainTab === 'analysis' ? 'active' : ''}" data-main-tab="analysis">
-      <i class="fas fa-chart-bar"></i><span>${admin ? '분석' : '나의 분석'}</span>
+      <i class="fas fa-chart-bar"></i><span>나의 분석</span>
     </button>
     <button class="mobile-nav-btn ${state.mainTab === 'report' ? 'active' : ''}" data-main-tab="report">
-      <i class="fas fa-chart-line"></i><span>${admin ? '리포트' : '나의 리포트'}</span>
+      <i class="fas fa-chart-line"></i><span>나의 리포트</span>
+    </button>
+  </div>`;
+}
+
+// 관리자 모바일 하단 네비 (비공식 기록/리포트용 — 최상위 탭)
+function renderMobileNavMain() {
+  return `
+  <div class="mobile-nav">
+    <button class="mobile-nav-btn ${state.mainTab === 'records' ? 'active' : ''}" data-main-tab="records">
+      <i class="fas fa-clipboard-list"></i><span>비공식 기록</span>
+    </button>
+    <button class="mobile-nav-btn ${state.mainTab === 'analysis' ? 'active' : ''}" data-main-tab="analysis">
+      <i class="fas fa-chart-bar"></i><span>분석</span>
+    </button>
+    <button class="mobile-nav-btn ${state.mainTab === 'report' ? 'active' : ''}" data-main-tab="report">
+      <i class="fas fa-chart-line"></i><span>리포트</span>
     </button>
   </div>`;
 }
@@ -1553,22 +1690,12 @@ function renderReportPage() {
 // ════════════════════════════════════════════
 function renderStudentRecordsPage() {
   const cu = state.currentUser;
-  if (!cu.studentId) {
-    return `
-    <div class="student-page reveal">
-      <div class="empty-state" style="padding:80px 24px">
-        <div class="empty-state-icon"><i class="fas fa-user-graduate"></i></div>
-        <div class="empty-state-title">학생을 선택해주세요</div>
-        <div class="empty-state-desc">상단의 역할 전환 메뉴에서<br>본인 이름을 선택해주세요</div>
-      </div>
-    </div>`;
-  }
-
   const sessions = state.sessions.slice().sort((a, b) => b.number - a.number);
   const sel = state.selectedSession || (sessions.length ? sessions[0].id : null);
   const selectedObj = sessions.find(s => s.id === sel);
   const myRecord = selectedObj ? getMyRecord(sel) : null;
   const prevRecord = selectedObj ? getPreviousSessionRecord(sel) : null;
+  const isFirstSession = selectedObj && sessions[sessions.length - 1].id === sel;
 
   return `
   <div class="student-page reveal">
@@ -1577,161 +1704,192 @@ function renderStudentRecordsPage() {
         <div class="student-avatar"><i class="fas fa-user-graduate"></i></div>
         <div>
           <div class="student-name">${escapeHtml(cu.studentName || '')}</div>
-          <div class="student-sub">${myRecord ? escapeHtml((myRecord.school || '') + ' ' + (myRecord.grade || '') + '학년 ' + (myRecord.class ? myRecord.class + '반' : '')) : '기록 없음'}</div>
+          <div class="student-sub">${escapeHtml(cu.school || '')} ${cu.grade || ''}학년 ${cu.class ? cu.class + '반' : ''}</div>
         </div>
       </div>
     </div>
 
     ${sessions.length > 0 ? `
+    <div class="student-session-label">차시 선택</div>
     <div class="session-cards-wrap" style="margin-bottom:16px">
       <div class="session-cards">
         ${sessions.map(s => `
         <div class="session-card ${sel === s.id ? 'selected' : ''}" data-session-id="${s.id}">
           <div class="session-card-number">${s.number}차시</div>
           <div class="session-card-date">${formatSessionDate(s.date)}</div>
-          <div class="session-card-title">${escapeHtml(s.title || '')}</div>
+          ${s.title ? `<div class="session-card-title">${escapeHtml(s.title)}</div>` : ''}
         </div>`).join('')}
       </div>
     </div>` : ''}
 
-    ${!selectedObj ? `<div class="student-empty"><i class="fas fa-calendar-times"></i> 등록된 차시가 없습니다</div>` :
-      !myRecord ? `<div class="student-empty"><i class="fas fa-user-slash"></i> 이 차시에 나의 기록이 없습니다<div style="font-size:12px;color:var(--muted);margin-top:6px">관리자(선생님)가 학생을 등록하면 기록이 표시됩니다</div></div>` : `
+    ${!selectedObj ? `<div class="student-empty"><i class="fas fa-calendar-times"></i> 등록된 차시가 없습니다<div style="font-size:12px;color:var(--muted);margin-top:6px">담당 선생님이 차시를 등록하면 기록이 표시됩니다</div></div>` :
+      `
+    <div class="student-session-info-bar">
+      <i class="fas fa-calendar-alt"></i> 현재 조회 중: <strong>${selectedObj.number}차시</strong> (${formatSessionDate(selectedObj.date)})
+    </div>
 
-    ${renderStudentSportSection(myRecord)}
-    ${renderStudentMockExamSection(myRecord, sel)}
-    ${renderStudentGpaSection(myRecord)}
-    ${prevRecord ? renderStudentCompare(myRecord, prevRecord) : ''}
+    ${renderStudentSportSection(myRecord, prevRecord, isFirstSession)}
+    ${renderStudentMockExamSection(myRecord, sel, prevRecord)}
+    ${renderStudentGpaSection(myRecord, prevRecord, isFirstSession)}
     `}
   </div>`;
 }
 
-function renderStudentSportSection(rec) {
+// 학생 앱 — 준비 중 페이지 (나의 분석 결과)
+function renderStudentAnalysisPage() {
+  return `
+  <div class="student-page reveal">
+    <div class="empty-state" style="padding:80px 24px">
+      <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
+      <div class="empty-state-title">나의 분석 결과</div>
+      <div class="empty-state-desc">준비 중입니다<br><span style="font-size:13px;color:var(--muted)">곧 서비스가 제공될 예정입니다</span></div>
+    </div>
+  </div>`;
+}
+
+// 학생 앱 — 준비 중 페이지 (나의 리포트)
+function renderStudentReportPage() {
+  return `
+  <div class="student-page reveal">
+    <div class="empty-state" style="padding:80px 24px">
+      <div class="empty-state-icon"><i class="fas fa-chart-line"></i></div>
+      <div class="empty-state-title">나의 리포트</div>
+      <div class="empty-state-desc">준비 중입니다<br><span style="font-size:13px;color:var(--muted)">곧 서비스가 제공될 예정입니다</span></div>
+    </div>
+  </div>`;
+}
+
+function renderStudentSportSection(rec, prevRecord, isFirstSession) {
   const sportCols = RECORD_COLUMNS.filter(c => c.group === 'sport');
+  const directionMap = { sprint100m: 'lower', standingLongJump: 'higher', medicineBall: 'higher', shuttleRun: 'higher', sitUps: 'higher' };
+
   return `
   <div class="student-section student-section-readonly">
     <div class="student-section-header">
       <span class="student-section-icon" style="color:var(--green)"><i class="fas fa-running"></i></span>
       <span>실기 기록</span>
-      <span class="student-readonly-badge"><i class="fas fa-lock"></i> 선생님 입력</span>
+      <span class="student-readonly-badge"><i class="fas fa-lock"></i> 담당 선생님 입력</span>
     </div>
-    <div class="student-fields-grid">
+    <div class="student-section-desc">담당 선생님이 입력한 기록입니다</div>
+    <div class="student-sport-table">
+      <div class="student-sport-row student-sport-row-header">
+        <span>종목</span><span>기록</span><span>이전 차시 대비</span>
+      </div>
       ${sportCols.map(col => {
-        const val = rec[col.key];
-        const display = val !== null && val !== undefined && val !== '' ? val : '-';
-        return `<div class="student-field">
-          <div class="student-field-label">${col.label}</div>
-          <div class="student-field-value">${display}${col.unit && display !== '-' ? `<span class="student-field-unit">${col.unit}</span>` : ''}</div>
+        const val = rec ? rec[col.key] : null;
+        const display = val !== null && val !== undefined && val !== '' ? `${val}${col.unit || ''}` : '<span class="text-muted">아직 입력되지 않았습니다</span>';
+        let delta = '';
+        if (isFirstSession && val !== null && val !== undefined && val !== '') {
+          delta = '<span class="text-muted">첫 기록입니다</span>';
+        } else if (prevRecord && val !== null && val !== undefined && val !== '') {
+          const prev = prevRecord[col.key];
+          if (prev !== null && prev !== undefined && prev !== '') {
+            const diff = Number(val) - Number(prev);
+            if (diff === 0) {
+              delta = '<span class="text-muted">— 변동 없음</span>';
+            } else {
+              const dir = directionMap[col.key] || 'higher';
+              const improved = (dir === 'higher' && diff > 0) || (dir === 'lower' && diff < 0);
+              const absDiff = Math.abs(diff);
+              const diffStr = absDiff % 1 !== 0 ? absDiff.toFixed(1) : absDiff;
+              delta = `<span class="delta ${improved ? 'delta-up' : 'delta-down'}">${improved ? '▲' : '▼'} ${diffStr}${col.unit || ''} ${improved ? '향상' : '하락'}</span>`;
+            }
+          } else {
+            delta = '<span class="text-muted">—</span>';
+          }
+        } else if (!isFirstSession) {
+          delta = '<span class="text-muted">—</span>';
+        }
+        return `<div class="student-sport-row">
+          <span class="student-sport-name">${col.label}</span>
+          <span class="student-sport-val">${display}</span>
+          <span class="student-sport-delta">${delta}</span>
         </div>`;
       }).join('')}
     </div>
-    <div class="student-section-info"><i class="fas fa-info-circle"></i> 실기 기록은 담당 선생님이 입력합니다</div>
+    <div class="student-section-lock"><i class="fas fa-lock"></i> 수정이 필요하면 담당 선생님께 문의하세요</div>
   </div>`;
 }
 
-function renderStudentMockExamSection(rec, sessionId) {
+function renderStudentMockExamSection(rec, sessionId, prevRecord) {
   const fields = [
-    { key: 'mockExamGrade', label: '모의고사 등급', min: 1, max: 9, step: 1 },
-    { key: 'koreanScore', label: '국어 원점수', min: 0, max: 100, step: 1 },
-    { key: 'mathScore', label: '수학 원점수', min: 0, max: 100, step: 1 },
-    { key: 'englishGrade', label: '영어 등급', min: 1, max: 9, step: 1 }
+    { key: 'mockExamGrade', label: '모의고사 등급', min: 1, max: 9, step: 1, dir: 'lower' },
+    { key: 'koreanScore', label: '국어 원점수', min: 0, max: 100, step: 1, dir: 'higher' },
+    { key: 'mathScore', label: '수학 원점수', min: 0, max: 100, step: 1, dir: 'higher' },
+    { key: 'englishGrade', label: '영어 등급', min: 1, max: 9, step: 1, dir: 'lower' }
   ];
+  const isEditing = state.studentMockEditing || false;
+  const recordId = rec ? rec.id : null;
+
   return `
   <div class="student-section student-section-editable">
     <div class="student-section-header">
       <span class="student-section-icon" style="color:var(--accent)"><i class="fas fa-pen-alt"></i></span>
       <span>모의고사 성적</span>
-      <span class="student-editable-badge"><i class="fas fa-unlock"></i> 본인 입력 가능</span>
+      ${!isEditing ? `<button class="student-edit-btn" id="btn-mock-edit"><i class="fas fa-edit"></i> 수정</button>` : ''}
     </div>
+    <div class="student-section-desc">직접 입력할 수 있습니다</div>
     <div class="student-mock-fields">
       ${fields.map(f => {
-        const val = rec[f.key];
+        const val = rec ? rec[f.key] : null;
         const display = val !== null && val !== undefined ? val : '';
+        const prevVal = prevRecord ? prevRecord[f.key] : null;
+        let deltaHtml = '';
+        if (prevVal !== null && prevVal !== undefined && val !== null && val !== undefined && val !== '' && prevVal !== '') {
+          const diff = Number(val) - Number(prevVal);
+          if (diff !== 0) {
+            const improved = (f.dir === 'higher' && diff > 0) || (f.dir === 'lower' && diff < 0);
+            deltaHtml = `<span class="delta-sm ${improved ? 'delta-up' : 'delta-down'}">${improved ? '▲' : '▼'} ${Math.abs(diff)}</span>`;
+          }
+        }
         return `<div class="student-mock-field">
-          <label class="student-mock-label">${f.label}</label>
-          <div class="student-mock-input-wrap">
-            <input type="number" class="student-mock-input" data-student-field="${f.key}" value="${display}" min="${f.min}" max="${f.max}" step="${f.step}" placeholder="-">
-            <i class="fas fa-pen student-mock-edit-icon"></i>
-          </div>
+          <label class="student-mock-label">${f.label} ${deltaHtml}</label>
+          ${isEditing
+            ? `<input type="number" class="student-mock-input" data-student-field="${f.key}" value="${display}" min="${f.min}" max="${f.max}" step="${f.step}" placeholder="입력">`
+            : `<div class="student-mock-value">${display !== '' ? display : '<span class="text-muted">-</span>'}</div>`
+          }
         </div>`;
       }).join('')}
     </div>
+    ${isEditing ? `
     <div class="student-mock-actions">
-      <button class="student-save-btn" id="btn-student-save" data-save-session="${sessionId}" data-save-record="${rec.id}">
+      <button class="student-cancel-btn" id="btn-mock-cancel"><i class="fas fa-times"></i> 취소</button>
+      <button class="student-save-btn" id="btn-student-save" data-save-session="${sessionId}" data-save-record="${recordId || ''}">
         <i class="fas fa-save"></i> 저장하기
       </button>
-    </div>
+    </div>` : ''}
   </div>`;
 }
 
-function renderStudentGpaSection(rec) {
-  const gpa = rec.gpa;
+function renderStudentGpaSection(rec, prevRecord, isFirstSession) {
+  const gpa = rec ? rec.gpa : null;
   const display = gpa !== null && gpa !== undefined && gpa !== '' ? gpa : '-';
+  let deltaHtml = '';
+  if (prevRecord && gpa !== null && gpa !== undefined && gpa !== '' && prevRecord.gpa !== null && prevRecord.gpa !== undefined && prevRecord.gpa !== '') {
+    const diff = Number(gpa) - Number(prevRecord.gpa);
+    if (diff !== 0) {
+      const improved = diff < 0; // lower grade = better
+      const absDiff = Math.abs(diff);
+      deltaHtml = `<div class="student-gpa-delta"><span class="delta ${improved ? 'delta-up' : 'delta-down'}">${improved ? '▲' : '▼'} ${absDiff % 1 !== 0 ? absDiff.toFixed(1) : absDiff}등급 ${improved ? '향상' : '하락'}</span></div>`;
+    }
+  } else if (isFirstSession && display !== '-') {
+    deltaHtml = `<div class="student-gpa-delta"><span class="text-muted">첫 기록입니다</span></div>`;
+  }
+
   return `
   <div class="student-section student-section-readonly">
     <div class="student-section-header">
       <span class="student-section-icon" style="color:var(--purple)"><i class="fas fa-graduation-cap"></i></span>
       <span>내신 성적</span>
-      <span class="student-readonly-badge"><i class="fas fa-lock"></i> 선생님 입력</span>
+      <span class="student-readonly-badge"><i class="fas fa-lock"></i> 담당 선생님 입력</span>
     </div>
-    <div class="student-fields-grid">
-      <div class="student-field">
-        <div class="student-field-label">내신 등급</div>
-        <div class="student-field-value student-field-value-lg">${display}</div>
-      </div>
+    <div class="student-section-desc">담당 선생님이 입력한 성적입니다</div>
+    <div class="student-gpa-display">
+      <div class="student-gpa-label">내신 등급</div>
+      <div class="student-gpa-value">${display}</div>
+      ${deltaHtml}
     </div>
-  </div>`;
-}
-
-function renderStudentCompare(current, prev) {
-  const compareFields = [
-    { key: 'sprint100m', label: '100m', unit: '초', direction: 'lower' },
-    { key: 'standingLongJump', label: '멀리뛰기', unit: 'cm', direction: 'higher' },
-    { key: 'medicineBall', label: '메디신볼', unit: 'm', direction: 'higher' },
-    { key: 'shuttleRun', label: '왕복달리기', unit: '회', direction: 'higher' },
-    { key: 'sitUps', label: '윗몸일으키기', unit: '회', direction: 'higher' },
-    { key: 'gpa', label: '내신', unit: '등급', direction: 'lower' },
-    { key: 'mockExamGrade', label: '모의등급', unit: '등급', direction: 'lower' },
-    { key: 'koreanScore', label: '국어', unit: '점', direction: 'higher' },
-    { key: 'mathScore', label: '수학', unit: '점', direction: 'higher' }
-  ];
-
-  const changes = [];
-  compareFields.forEach(f => {
-    const cur = current[f.key];
-    const prv = prev[f.key];
-    if (cur == null || prv == null || cur === '' || prv === '') return;
-    const diff = Number(cur) - Number(prv);
-    if (diff === 0) return;
-    const improved = (f.direction === 'higher' && diff > 0) || (f.direction === 'lower' && diff < 0);
-    changes.push({
-      label: f.label,
-      prev: prv,
-      cur: cur,
-      diff: Math.abs(diff),
-      unit: f.unit,
-      improved,
-      sign: diff > 0 ? '+' : '-'
-    });
-  });
-
-  if (!changes.length) return '';
-
-  return `
-  <div class="student-section">
-    <div class="student-section-header">
-      <span class="student-section-icon" style="color:var(--yellow)"><i class="fas fa-exchange-alt"></i></span>
-      <span>이전 차시와 비교</span>
-    </div>
-    <div class="student-compare-list">
-      ${changes.map(c => `
-      <div class="student-compare-item">
-        <span class="student-compare-label">${c.label}</span>
-        <span class="student-compare-values">${c.prev}${c.unit} → ${c.cur}${c.unit}</span>
-        <span class="student-compare-delta ${c.improved ? 'improved' : 'declined'}">
-          ${c.improved ? '▲' : '▼'} ${c.diff.toFixed(c.diff % 1 !== 0 ? 1 : 0)}${c.unit} ${c.improved ? '향상' : '하락'}
-        </span>
-      </div>`).join('')}
-    </div>
+    <div class="student-section-lock"><i class="fas fa-lock"></i> 수정이 필요하면 담당 선생님께 문의하세요</div>
   </div>`;
 }
 
@@ -3192,35 +3350,40 @@ function bindEvents() {
     });
   }
 
-  // ── 역할 전환 이벤트 ──
-  const roleSwitcher = document.getElementById('role-switcher');
-  if (roleSwitcher) {
-    const badge = roleSwitcher.querySelector('.role-badge');
-    const dropdown = document.getElementById('role-dropdown');
+  // ── 프로필 드롭다운 / 로그아웃 ──
+  const userProfile = document.getElementById('user-profile');
+  if (userProfile) {
+    const badge = userProfile.querySelector('.user-profile-badge');
+    const dropdown = document.getElementById('user-profile-dropdown');
     if (badge && dropdown) {
       badge.addEventListener('click', (e) => {
         e.stopPropagation();
         dropdown.classList.toggle('open');
       });
-      // 배경 클릭 시 닫기
       document.addEventListener('click', () => dropdown.classList.remove('open'), { once: true });
     }
-    // 역할 옵션 클릭
-    document.querySelectorAll('[data-role-switch]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const role = btn.dataset.roleSwitch;
-        if (role === 'admin') {
-          state.currentUser = { role: 'admin', studentId: null, studentName: null };
-        } else {
-          const sid = btn.dataset.roleStudentId;
-          const sname = btn.dataset.roleStudentName;
-          state.currentUser = { role: 'student', studentId: sid, studentName: sname };
-        }
-        saveCurrentUser();
-        if (dropdown) dropdown.classList.remove('open');
-        render();
-      });
+  }
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', (e) => {
+      e.stopPropagation();
+      logout();
+    });
+  }
+
+  // ── 학생 뷰 — 모의고사 수정/취소/저장 ──
+  const btnMockEdit = document.getElementById('btn-mock-edit');
+  if (btnMockEdit) {
+    btnMockEdit.addEventListener('click', () => {
+      state.studentMockEditing = true;
+      render();
+    });
+  }
+  const btnMockCancel = document.getElementById('btn-mock-cancel');
+  if (btnMockCancel) {
+    btnMockCancel.addEventListener('click', () => {
+      state.studentMockEditing = false;
+      render();
     });
   }
 
@@ -3232,14 +3395,30 @@ function bindEvents() {
       const rid = studentSaveBtn.dataset.saveRecord;
       const session = state.sessions.find(s => s.id === sid);
       if (!session) return;
-      const record = (session.records || []).find(r => r.id === rid);
-      if (!record) return;
+
+      // record가 없으면 자동 생성
+      let record;
+      if (rid) {
+        record = (session.records || []).find(r => r.id === rid);
+      }
+      if (!record) {
+        const cu = state.currentUser;
+        if (!session.records) session.records = [];
+        record = createEmptyRecord();
+        record.id = cu.studentId;
+        record.studentName = cu.studentName;
+        record.school = cu.school || '';
+        record.grade = cu.grade || '';
+        record.class = cu.class || '';
+        session.records.push(record);
+      }
 
       let hasError = false;
       document.querySelectorAll('[data-student-field]').forEach(inp => {
         const key = inp.dataset.studentField;
         const v = validateCellValue(key, inp.value);
-        if (!v.valid) { showToast(v.msg); hasError = true; return; }
+        if (!v.valid) { showToast(v.msg); hasError = true; inp.classList.add('input-error'); return; }
+        inp.classList.remove('input-error');
         record[key] = v.value;
       });
       if (hasError) return;
@@ -3247,6 +3426,7 @@ function bindEvents() {
       record.lastEditedBy = 'student';
       record.lastEditedAt = new Date().toISOString();
       saveSessions(state.sessions);
+      state.studentMockEditing = false;
       showToast('모의고사 성적이 저장되었습니다.');
       render();
     });
@@ -4038,5 +4218,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (savedMainTab && ['records', 'analysis', 'report'].includes(savedMainTab)) {
     state.mainTab = savedMainTab;
   }
+  // 모의고사 편집 모드 초기화
+  state.studentMockEditing = false;
   render();
 });

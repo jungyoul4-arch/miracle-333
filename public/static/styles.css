@@ -3091,13 +3091,153 @@ body,
 }
 
 /* ═══════════════════════════════════════════════ */
-/* ═══ ROLE SWITCHER (역할 전환) ═══ */
+/* ═══ LOGIN PAGE (로그인) ═══ */
 /* ═══════════════════════════════════════════════ */
 
-.role-switcher {
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+}
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 40px 32px;
+  box-shadow: var(--shadow-lg);
+}
+.login-logo {
+  text-align: center;
+  margin-bottom: 32px;
+}
+.login-logo .logo-icon {
+  margin: 0 auto 12px;
+}
+.login-title {
+  font-family: var(--font-heading);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+.login-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.login-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+}
+.login-label i {
+  width: 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.login-input {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: all 0.2s;
+}
+.login-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+}
+.login-input::placeholder {
+  color: var(--muted);
+}
+.login-error {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--red-rgb, 255,23,68), 0.08);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.login-btn {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.3);
+  margin-top: 4px;
+  min-height: 48px;
+}
+.login-btn:hover {
+  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
+  transform: translateY(-1px);
+}
+.login-info {
+  margin-top: 24px;
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.login-info-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.login-info-row {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 0;
+  font-family: var(--font-number);
+}
+.login-info-row span {
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ═══ USER PROFILE DROPDOWN ═══ */
+/* ═══════════════════════════════════════════════ */
+
+.user-profile {
   position: relative;
 }
-.role-badge {
+.user-profile-badge {
   padding: 6px 14px;
   border-radius: var(--radius-full);
   font-size: 12px;
@@ -3111,28 +3251,27 @@ body,
   border: 1px solid var(--border);
   white-space: nowrap;
 }
-.role-admin {
+.admin-badge {
   background: rgba(var(--accent-rgb), 0.1);
   color: var(--accent);
   border-color: rgba(var(--accent-rgb), 0.25);
 }
-.role-admin:hover {
+.admin-badge:hover {
   background: rgba(var(--accent-rgb), 0.18);
 }
-.role-student {
+.student-badge {
   background: rgba(var(--green-rgb), 0.1);
   color: var(--green);
   border-color: rgba(var(--green-rgb), 0.25);
 }
-.role-student:hover {
+.student-badge:hover {
   background: rgba(var(--green-rgb), 0.18);
 }
-
-.role-dropdown {
+.user-profile-dropdown {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 260px;
+  width: 220px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -3142,32 +3281,32 @@ body,
   overflow: hidden;
   animation: modal-slide-up 0.2s var(--ease-out);
 }
-.role-dropdown.open { display: block; }
-.role-dropdown-header {
-  padding: 8px 14px 4px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.user-profile-dropdown.open { display: block; }
+.user-profile-info {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
 }
-.role-dropdown-divider {
+.user-profile-name {
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.user-profile-detail {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.user-profile-divider {
   height: 1px;
   background: var(--border);
-  margin: 4px 0;
 }
-.role-dropdown-empty {
-  padding: 12px 14px;
-  font-size: 12px;
-  color: var(--muted);
-  text-align: center;
-}
-.role-option {
+.user-profile-option {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 14px;
+  padding: 12px 16px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -3177,19 +3316,9 @@ body,
   text-align: left;
   transition: all 0.15s;
 }
-.role-option:hover {
+.user-profile-option:hover {
   background: var(--surface-hover);
-  color: var(--text);
-}
-.role-option.active {
-  background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent);
-  font-weight: 600;
-}
-.role-option-sub {
-  font-size: 11px;
-  color: var(--muted);
-  margin-left: auto;
+  color: var(--red);
 }
 
 /* ═══════════════════════════════════════════════ */
@@ -3216,15 +3345,16 @@ body,
   gap: 12px;
 }
 .student-avatar {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent2));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 22px;
   color: #fff;
+  flex-shrink: 0;
 }
 .student-name {
   font-family: var(--font-heading);
@@ -3236,6 +3366,29 @@ body,
   font-size: 12px;
   color: var(--muted);
   margin-top: 2px;
+}
+.student-session-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.student-session-info-bar {
+  padding: 10px 14px;
+  background: rgba(var(--accent-rgb), 0.06);
+  border: 1px solid rgba(var(--accent-rgb), 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.student-session-info-bar strong {
+  color: var(--accent);
 }
 
 .student-empty {
@@ -3279,62 +3432,93 @@ body,
 .student-section-icon {
   font-size: 16px;
 }
-.student-readonly-badge, .student-editable-badge {
+.student-readonly-badge {
   margin-left: auto;
   font-size: 10px;
   font-weight: 600;
   padding: 3px 8px;
   border-radius: var(--radius-full);
-}
-.student-readonly-badge {
   background: var(--surface);
   color: var(--muted);
   border: 1px solid var(--border);
 }
-.student-editable-badge {
-  background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent);
-  border: 1px solid rgba(var(--accent-rgb), 0.2);
-}
-
-/* 읽기 전용 필드 그리드 */
-.student-fields-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px;
-  padding: 16px;
-}
-.student-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.student-field-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-}
-.student-field-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text);
-  font-family: var(--font-number);
-}
-.student-field-value-lg {
-  font-size: 28px;
-}
-.student-field-unit {
+.student-section-desc {
+  padding: 8px 16px;
   font-size: 12px;
-  font-weight: 400;
   color: var(--muted);
-  margin-left: 2px;
 }
-.student-section-info {
+.student-section-lock {
   padding: 10px 16px;
   font-size: 11px;
   color: var(--muted);
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+/* 실기 기록 테이블 */
+.student-sport-table {
+  padding: 0 16px 12px;
+}
+.student-sport-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+.student-sport-row:last-child { border-bottom: none; }
+.student-sport-row-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding-bottom: 8px;
+}
+.student-sport-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.student-sport-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-number);
+}
+.student-sport-delta {
+  font-size: 12px;
+  text-align: right;
+}
+.text-muted {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: inherit;
+}
+.delta { font-weight: 700; }
+.delta-up { color: #4ADE80; }
+.delta-down { color: #F87171; }
+.delta-sm { font-size: 11px; font-weight: 600; }
+
+/* 모의고사 수정 버튼 */
+.student-edit-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.06);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.student-edit-btn:hover {
+  background: rgba(var(--accent-rgb), 0.15);
 }
 
 /* 모의고사 입력 필드 */
@@ -3353,16 +3537,15 @@ body,
   font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
-  min-width: 110px;
-}
-.student-mock-input-wrap {
-  position: relative;
-  flex: 1;
-  max-width: 200px;
+  min-width: 130px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .student-mock-input {
-  width: 100%;
-  padding: 9px 32px 9px 12px;
+  flex: 1;
+  max-width: 200px;
+  padding: 10px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(var(--accent-rgb), 0.3);
   background: rgba(var(--accent-rgb), 0.04);
@@ -3378,21 +3561,28 @@ body,
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
   background: rgba(var(--accent-rgb), 0.08);
 }
-.student-mock-edit-icon {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--accent);
-  font-size: 11px;
-  opacity: 0.6;
-  pointer-events: none;
+.student-mock-input.input-error {
+  border-color: var(--red);
+  box-shadow: 0 0 0 3px rgba(var(--red-rgb, 255,23,68), 0.12);
+}
+.student-mock-value {
+  flex: 1;
+  max-width: 200px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-number);
 }
 .student-mock-actions {
   padding: 12px 16px;
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 .student-save-btn {
   padding: 10px 24px;
@@ -3409,57 +3599,71 @@ body,
   gap: 6px;
   transition: all 0.2s;
   box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3);
+  min-height: 44px;
 }
 .student-save-btn:hover {
   box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.4);
   transform: translateY(-1px);
 }
-
-/* 이전 차시 비교 */
-.student-compare-list {
-  padding: 12px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.student-compare-item {
+.student-cancel-btn {
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 13px;
+  font-family: var(--font-heading);
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  gap: 6px;
+  transition: all 0.15s;
+  min-height: 44px;
 }
-.student-compare-label {
+.student-cancel-btn:hover {
+  background: var(--surface-hover);
+}
+
+/* 내신 성적 카드 */
+.student-gpa-display {
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.student-gpa-label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
-  min-width: 80px;
+  color: var(--muted);
 }
-.student-compare-values {
-  font-size: 13px;
+.student-gpa-value {
+  font-size: 40px;
+  font-weight: 800;
   color: var(--text);
   font-family: var(--font-number);
 }
-.student-compare-delta {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
+.student-gpa-delta {
+  font-size: 13px;
 }
-.student-compare-delta.improved { color: var(--green); }
-.student-compare-delta.declined { color: var(--red); }
 
-/* 반응형 */
+/* 반응형 — 모바일 우선 */
 @media (max-width: 768px) {
+  .login-card { padding: 32px 20px; }
+  .login-title { font-size: 20px; }
   .student-page { padding: 16px 0; }
   .student-name { font-size: 17px; }
-  .student-fields-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px; }
+  .student-avatar { width: 40px; height: 40px; font-size: 18px; }
+  .student-sport-row { grid-template-columns: 1fr 80px 1fr; }
+  .student-sport-name { font-size: 12px; }
+  .student-sport-val { font-size: 14px; }
+  .student-sport-delta { font-size: 11px; }
   .student-mock-field { flex-direction: column; align-items: flex-start; gap: 4px; }
   .student-mock-label { min-width: auto; }
-  .student-mock-input-wrap { max-width: 100%; width: 100%; }
-  .role-badge span { display: none; }
-  .role-dropdown { right: -40px; }
-  .student-compare-item { flex-wrap: wrap; }
+  .student-mock-input, .student-mock-value { max-width: 100%; width: 100%; }
+  .student-gpa-value { font-size: 32px; }
+  .user-profile-badge span { display: none; }
+  .user-profile-dropdown { right: -40px; }
+  .main-nav-tabs .main-nav-btn span { font-size: 11px; }
 }
