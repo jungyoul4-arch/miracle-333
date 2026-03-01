@@ -4400,3 +4400,134 @@ body,
     flex-direction: column; align-items: flex-start;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   학생 리포트 페이지 (Report / Charts)
+   ═══════════════════════════════════════════════ */
+
+.rp-page { max-width: 760px; margin: 0 auto; }
+
+/* ── 헤더 ── */
+.rp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 0 8px; gap: 12px;
+}
+.rp-title {
+  font-size: 20px; font-weight: 700; color: var(--text);
+}
+.rp-user {
+  font-size: 13px; color: var(--muted);
+  background: rgba(255,255,255,0.04); padding: 5px 12px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ── 조회 범위 바 ── */
+.rp-range-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 0 16px;
+}
+.rp-range-label {
+  font-size: 13px; color: var(--muted); font-weight: 600;
+}
+.rp-range-select {
+  font-size: 13px; font-weight: 500; color: var(--text);
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  padding: 7px 10px; border-radius: 8px; outline: none; cursor: pointer;
+  font-family: inherit; min-height: 44px;
+}
+.rp-range-select:focus { border-color: var(--accent); }
+.rp-range-tilde { color: var(--muted); font-weight: 300; }
+.rp-month-select {
+  margin-left: auto;
+}
+
+/* ── 안내 블록 ── */
+.rp-notice {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: rgba(0,207,253,0.06); border: 1px solid rgba(0,207,253,0.12);
+  border-radius: 10px; font-size: 13px; color: var(--accent);
+}
+.rp-notice-warn {
+  background: rgba(248,113,113,0.06); border-color: rgba(248,113,113,0.15);
+  color: #F87171;
+}
+.rp-goto-records {
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  background: rgba(0,207,253,0.08); border: 1px solid rgba(0,207,253,0.15);
+  padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  margin-left: auto; white-space: nowrap;
+}
+
+/* ── 그래프 카드 ── */
+.rp-card {
+  background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 14px; padding: 18px 16px; margin-bottom: 16px;
+}
+.rp-card-title {
+  font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 12px;
+}
+.rp-card-sub {
+  font-size: 12px; font-weight: 400; color: var(--muted);
+}
+.rp-chart-wrap {
+  position: relative; width: 100%; min-height: 240px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.rp-chart-wrap canvas {
+  min-width: 320px;
+}
+
+/* ── 종목 체크박스 ── */
+.rp-sport-checks {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.rp-sport-check {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 12px; color: var(--text); cursor: pointer;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  padding: 5px 10px; border-radius: 8px; min-height: 36px;
+  transition: border-color 0.2s;
+  user-select: none; -webkit-user-select: none;
+}
+.rp-sport-check:has(input:checked) {
+  border-color: var(--accent); background: rgba(0,207,253,0.08);
+}
+.rp-sport-check input {
+  accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer;
+}
+
+/* ── 추이 요약 ── */
+.rp-trend-box {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.rp-trend-item {
+  font-size: 13px; color: var(--text); padding: 4px 0;
+}
+.rp-trend-up { color: #4ADE80; }
+.rp-trend-up::before { content: ''; }
+.rp-trend-down { color: #F87171; }
+.rp-trend-down::before { content: ''; }
+.rp-trend-empty {
+  font-size: 12px; color: var(--muted); padding: 4px 0;
+}
+
+/* ── 모바일 반응형 ── */
+@media (max-width: 600px) {
+  .rp-range-bar {
+    gap: 6px;
+  }
+  .rp-range-select {
+    font-size: 12px; padding: 6px 8px; flex: 1; min-width: 0;
+  }
+  .rp-month-select {
+    margin-left: 0; flex-basis: 100%;
+  }
+  .rp-sport-check {
+    font-size: 11px; padding: 4px 8px;
+  }
+  .rp-chart-wrap {
+    min-height: 220px;
+  }
+}

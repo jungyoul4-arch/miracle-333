@@ -1249,7 +1249,10 @@ function render() {
       }
     }
     bindEvents();
-    requestAnimationFrame(() => initScrollReveal());
+    requestAnimationFrame(() => {
+      initScrollReveal();
+      if (state.mainTab === 'report' && isStudent()) renderReportCharts();
+    });
   } catch (e) {
     console.error('[K1] Render error:', e);
   }
@@ -2430,15 +2433,343 @@ function renderConditionBottomSheet(sessions, currentSessionId, currentMonth) {
 }
 
 // 학생 앱 — 준비 중 페이지 (나의 리포트)
+// ═══════════════════════════════════════════════════════
+// ═══ 학생 앱 — 나의 리포트 (추이 그래프) ═══
+// ═══════════════════════════════════════════════════════
+
+let _reportState = {
+  sessionFrom: null,   // 시작 차시 id
+  sessionTo: null,     // 끝 차시 id
+  sportChecked: { '제멀': true, '50m달리기': true },  // 체크박스 기본값
+  charts: {}           // Chart.js 인스턴스 캐시
+};
+
+// 차시 범위 내 데이터 수집
+function collectReportData(sessions, studentId, fromId, toId, month) {
+  const sorted = sessions.slice().sort((a, b) => a.number - b.number);
+  const fromIdx = fromId ? sorted.findIndex(s => s.id === fromId) : 0;
+  const toIdx = toId ? sorted.findIndex(s => s.id === toId) : sorted.length - 1;
+  const range = sorted.slice(Math.max(fromIdx, 0), toIdx + 1);
+
+  const data = {
+    labels: [],     // ["1차시 3/1", ...]
+    sessions: [],   // session objects
+    // 등급
+    koreanGrade: [], mathGrade: [], englishGrade: [],
+    // 원점수
+    koreanRaw: [], mathRaw: [],
+    // 실기 — key -> [val, val, ...]
+    sports: {},
+    // 메타
+    hasExam: false, hasSports: false
+  };
+
+  for (const s of range) {
+    data.labels.push(`${s.number}차시 ${formatSessionDate(s.date)}`);
+    data.sessions.push(s);
+
+    // 모의고사
+    const mock = loadMockExam(studentId, s.id, month);
+    if (mock) {
+      data.hasExam = true;
+      const k = mock.korean || {};
+      const m = mock.math || {};
+      const e = mock.english || {};
+      data.koreanGrade.push(k.grade || null);
+      data.mathGrade.push(m.grade || null);
+      data.englishGrade.push(e.grade || null);
+      data.koreanRaw.push(k.rawScore || null);
+      data.mathRaw.push(m.rawScore || null);
+    } else {
+      data.koreanGrade.push(null);
+      data.mathGrade.push(null);
+      data.englishGrade.push(null);
+      data.koreanRaw.push(null);
+      data.mathRaw.push(null);
+    }
+
+    // 실기
+    const rec = (s.records || []).find(r => r.id === studentId || r.studentName === state.currentUser.studentName);
+    const sports = rec ? (rec.sports || {}) : {};
+    if (rec && Object.keys(sports).length > 0) data.hasSports = true;
+    for (const f of SPORTS_FIELDS) {
+      if (!data.sports[f.key]) data.sports[f.key] = [];
+      const v = sports[f.key];
+      data.sports[f.key].push(v !== undefined && v !== null && v !== '' && v !== 0 ? Number(v) : null);
+    }
+  }
+
+  return data;
+}
+
+// 향상/하락 요약 텍스트 생성
+function trendSummary(label, values, unit, lowerIsBetter) {
+  const valid = values.filter(v => v !== null && v !== undefined);
+  if (valid.length < 2) return null;
+  const first = valid[0], last = valid[valid.length - 1];
+  const diff = last - first;
+  if (diff === 0) return { text: `${label} ${first}${unit} 유지`, cls: '' };
+  const improved = lowerIsBetter ? diff < 0 : diff > 0;
+  const arrow = improved ? '▲' : '▼';
+  const absDiff = Math.abs(diff);
+  const diffStr = absDiff % 1 !== 0 ? absDiff.toFixed(1) : String(absDiff);
+  return {
+    text: `${label} ${first}${unit}→${last}${unit} (${arrow}${diffStr}${unit} ${improved ? '향상' : '하락'})`,
+    cls: improved ? 'rp-trend-up' : 'rp-trend-down'
+  };
+}
+
 function renderStudentReportPage() {
-  return `
-  <div class="student-page reveal">
-    <div class="empty-state" style="padding:80px 24px">
-      <div class="empty-state-icon"><i class="fas fa-chart-line"></i></div>
-      <div class="empty-state-title">나의 리포트</div>
-      <div class="empty-state-desc">준비 중입니다<br><span style="font-size:13px;color:var(--muted)">곧 서비스가 제공될 예정입니다</span></div>
+  const cu = state.currentUser;
+  if (!cu || !cu.studentId) return '<div class="student-page reveal"><div class="empty-state" style="padding:80px 24px"><div class="empty-state-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="empty-state-title">로그인이 필요합니다</div></div></div>';
+
+  const sessions = state.sessions.slice().sort((a, b) => a.number - b.number);
+  if (sessions.length === 0) {
+    return `<div class="student-page reveal"><div class="empty-state" style="padding:80px 24px"><div class="empty-state-icon"><i class="fas fa-calendar-times"></i></div><div class="empty-state-title">등록된 차시가 없습니다</div><div class="empty-state-desc">담당 선생님이 차시를 등록하면 리포트가 생성됩니다</div></div></div>`;
+  }
+
+  // 차시 범위 초기값
+  if (!_reportState.sessionFrom) _reportState.sessionFrom = sessions[0].id;
+  if (!_reportState.sessionTo) _reportState.sessionTo = sessions[sessions.length - 1].id;
+
+  const month = state.selectedExamMonth || '3월';
+  const rd = collectReportData(sessions, cu.studentId, _reportState.sessionFrom, _reportState.sessionTo, month);
+  const onlyOneSession = rd.sessions.length < 2;
+
+  // 차시 select 옵션 빌더
+  function sessionOpts(selectedId) {
+    return sessions.map(s => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${s.number}차시 ${formatSessionDate(s.date)}</option>`).join('');
+  }
+
+  let html = `<div class="student-page rp-page reveal">`;
+
+  // ── 헤더 ──
+  html += `
+  <div class="rp-header">
+    <div class="rp-header-left">
+      <div class="rp-title"><i class="fas fa-chart-line"></i> 나의 리포트</div>
+    </div>
+    <div class="rp-header-right">
+      <span class="rp-user"><i class="fas fa-user"></i> ${escapeHtml(cu.studentName || '')}</span>
+    </div>
+  </div>
+  <div class="rp-range-bar">
+    <span class="rp-range-label">조회 기간:</span>
+    <select class="rp-range-select" id="rp-from">${sessionOpts(_reportState.sessionFrom)}</select>
+    <span class="rp-range-tilde">~</span>
+    <select class="rp-range-select" id="rp-to">${sessionOpts(_reportState.sessionTo)}</select>
+    <select class="rp-range-select rp-month-select" id="rp-month">
+      ${EXAM_MONTHS.map(m => `<option value="${m}" ${m === month ? 'selected' : ''}>${m === '11월' ? '11월(수능)' : m}</option>`).join('')}
+    </select>
+  </div>`;
+
+  // ── 데이터 부족 경고 ──
+  if (onlyOneSession) {
+    html += `
+    <div class="rp-notice">
+      <i class="fas fa-info-circle"></i> 추이를 확인하려면 2개 이상의 차시 데이터가 필요합니다.
+    </div>`;
+  }
+
+  if (!rd.hasExam) {
+    html += `
+    <div class="rp-notice rp-notice-warn">
+      <i class="fas fa-exclamation-triangle"></i> 모의고사 성적을 입력해주세요
+      <button class="rp-goto-records" id="rp-goto-records"><i class="fas fa-arrow-right"></i> 나의 기록으로 이동</button>
+    </div>`;
+  }
+
+  // ── 그래프 1: 성적 등급 추이 ──
+  html += `
+  <div class="rp-card">
+    <div class="rp-card-title"><i class="fas fa-graduation-cap"></i> 성적 등급 추이 <span class="rp-card-sub">(${month} 기준)</span></div>
+    <div class="rp-chart-wrap">
+      <canvas id="chart-grade" height="260"></canvas>
+    </div>
+    <div class="rp-trend-box" id="trend-grade">
+      ${(() => {
+        const items = [
+          trendSummary('국어', rd.koreanGrade, '등급', true),
+          trendSummary('수학', rd.mathGrade, '등급', true),
+          trendSummary('영어', rd.englishGrade, '등급', true)
+        ].filter(Boolean);
+        return items.length ? items.map(t => `<div class="rp-trend-item ${t.cls}">${t.text}</div>`).join('') : '<div class="rp-trend-empty">데이터가 부족합니다</div>';
+      })()}
     </div>
   </div>`;
+
+  // ── 그래프 2: 실기 기록 추이 ──
+  const sportCheckKeys = SPORTS_FIELDS.slice(0, 10);
+  html += `
+  <div class="rp-card">
+    <div class="rp-card-title"><i class="fas fa-running"></i> 실기 기록 추이</div>
+    <div class="rp-sport-checks" id="rp-sport-checks">
+      ${sportCheckKeys.map(f => `
+      <label class="rp-sport-check">
+        <input type="checkbox" value="${f.key}" ${_reportState.sportChecked[f.key] ? 'checked' : ''}> ${f.label}
+      </label>`).join('')}
+    </div>
+    <div class="rp-chart-wrap">
+      <canvas id="chart-sports" height="280"></canvas>
+    </div>
+    <div class="rp-trend-box" id="trend-sports">
+      ${(() => {
+        const items = [];
+        for (const key of Object.keys(_reportState.sportChecked)) {
+          if (!_reportState.sportChecked[key]) continue;
+          const f = SPORTS_FIELDS.find(sf => sf.key === key);
+          if (!f || !rd.sports[key]) continue;
+          const t = trendSummary(f.label, rd.sports[key], f.unit, f.direction === 'lower');
+          if (t) items.push(t);
+        }
+        return items.length ? items.map(t => `<div class="rp-trend-item ${t.cls}">${t.text}</div>`).join('') : '<div class="rp-trend-empty">종목을 선택하세요</div>';
+      })()}
+    </div>
+  </div>`;
+
+  // ── 그래프 3: 모의고사 원점수 추이 ──
+  html += `
+  <div class="rp-card">
+    <div class="rp-card-title"><i class="fas fa-pen"></i> 모의고사 원점수 추이 <span class="rp-card-sub">(${month} 기준)</span></div>
+    <div class="rp-chart-wrap">
+      <canvas id="chart-raw" height="260"></canvas>
+    </div>
+    <div class="rp-trend-box" id="trend-raw">
+      ${(() => {
+        const items = [
+          trendSummary('국어', rd.koreanRaw, '점', false),
+          trendSummary('수학', rd.mathRaw, '점', false)
+        ].filter(Boolean);
+        return items.length ? items.map(t => `<div class="rp-trend-item ${t.cls}">${t.text}</div>`).join('') : '<div class="rp-trend-empty">데이터가 부족합니다</div>';
+      })()}
+    </div>
+  </div>`;
+
+  html += `</div>`; // .rp-page
+  return html;
+}
+
+// Chart.js 다크 테마 공통 옵션
+function chartDarkDefaults() {
+  return {
+    color: 'rgba(255,255,255,0.7)',
+    borderColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'transparent'
+  };
+}
+
+// 리포트 차트 그리기
+function renderReportCharts() {
+  if (typeof Chart === 'undefined') return;
+
+  const cu = state.currentUser;
+  if (!cu || !cu.studentId) return;
+  const sessions = state.sessions.slice().sort((a, b) => a.number - b.number);
+  const month = state.selectedExamMonth || '3월';
+  const rd = collectReportData(sessions, cu.studentId, _reportState.sessionFrom, _reportState.sessionTo, month);
+
+  // 기존 차트 파괴
+  Object.values(_reportState.charts).forEach(c => { try { c.destroy(); } catch {} });
+  _reportState.charts = {};
+
+  const gridColor = 'rgba(255,255,255,0.06)';
+  const tickColor = 'rgba(255,255,255,0.5)';
+  const tooltipBg = 'rgba(10,14,23,0.95)';
+
+  // ── 그래프 1: 등급 추이 ──
+  const gradeCtx = document.getElementById('chart-grade');
+  if (gradeCtx) {
+    _reportState.charts.grade = new Chart(gradeCtx, {
+      type: 'line',
+      data: {
+        labels: rd.labels,
+        datasets: [
+          { label: '국어', data: rd.koreanGrade, borderColor: '#00CFFD', backgroundColor: 'rgba(0,207,253,0.1)', tension: 0.3, pointRadius: 5, pointHoverRadius: 8, borderWidth: 2.5, spanGaps: true },
+          { label: '수학', data: rd.mathGrade, borderColor: '#A78BFA', backgroundColor: 'rgba(167,139,250,0.1)', tension: 0.3, pointRadius: 5, pointHoverRadius: 8, borderWidth: 2.5, spanGaps: true },
+          { label: '영어', data: rd.englishGrade, borderColor: '#FACC15', backgroundColor: 'rgba(250,204,21,0.1)', tension: 0.3, pointRadius: 5, pointHoverRadius: 8, borderWidth: 2.5, spanGaps: true }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tickColor, font: { size: 12 }, usePointStyle: true, pointStyle: 'circle' } },
+          tooltip: { backgroundColor: tooltipBg, titleColor: '#fff', bodyColor: '#fff', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10,
+            callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y + '등급' : '미입력'}` }
+          }
+        },
+        scales: {
+          y: { reverse: true, min: 1, max: 9, ticks: { stepSize: 1, color: tickColor, callback: (v) => v + '등급' }, grid: { color: gridColor } },
+          x: { ticks: { color: tickColor, font: { size: 11 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // ── 그래프 2: 실기 추이 ──
+  const sportsCtx = document.getElementById('chart-sports');
+  if (sportsCtx) {
+    const colors = ['#00CFFD', '#A78BFA', '#4ADE80', '#FACC15', '#F87171', '#FB923C', '#38BDF8', '#E879F9', '#34D399', '#FCD34D'];
+    const datasets = [];
+    let ci = 0;
+    for (const f of SPORTS_FIELDS.slice(0, 10)) {
+      if (!_reportState.sportChecked[f.key]) continue;
+      const color = colors[ci % colors.length];
+      datasets.push({
+        label: `${f.label} (${f.unit})`,
+        data: rd.sports[f.key] || [],
+        borderColor: color, backgroundColor: color + '18',
+        tension: 0.3, pointRadius: 5, pointHoverRadius: 8, borderWidth: 2.5, spanGaps: true,
+        yAxisID: 'y'
+      });
+      ci++;
+    }
+    _reportState.charts.sports = new Chart(sportsCtx, {
+      type: 'line',
+      data: { labels: rd.labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tickColor, font: { size: 11 }, usePointStyle: true, pointStyle: 'circle' } },
+          tooltip: { backgroundColor: tooltipBg, titleColor: '#fff', bodyColor: '#fff', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10 }
+        },
+        scales: {
+          y: { ticks: { color: tickColor }, grid: { color: gridColor } },
+          x: { ticks: { color: tickColor, font: { size: 11 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+  }
+
+  // ── 그래프 3: 원점수 추이 ──
+  const rawCtx = document.getElementById('chart-raw');
+  if (rawCtx) {
+    _reportState.charts.raw = new Chart(rawCtx, {
+      type: 'line',
+      data: {
+        labels: rd.labels,
+        datasets: [
+          { label: '국어 원점수', data: rd.koreanRaw, borderColor: '#00CFFD', backgroundColor: 'rgba(0,207,253,0.1)', tension: 0.3, pointRadius: 5, pointHoverRadius: 8, borderWidth: 2.5, fill: true, spanGaps: true },
+          { label: '수학 원점수', data: rd.mathRaw, borderColor: '#A78BFA', backgroundColor: 'rgba(167,139,250,0.1)', tension: 0.3, pointRadius: 5, pointHoverRadius: 8, borderWidth: 2.5, fill: true, spanGaps: true }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: tickColor, font: { size: 12 }, usePointStyle: true, pointStyle: 'circle' } },
+          tooltip: { backgroundColor: tooltipBg, titleColor: '#fff', bodyColor: '#fff', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10,
+            callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y !== null ? ctx.parsed.y + '점' : '미입력'}` }
+          }
+        },
+        scales: {
+          y: { min: 0, max: 100, ticks: { stepSize: 20, color: tickColor, callback: (v) => v + '점' }, grid: { color: gridColor } },
+          x: { ticks: { color: tickColor, font: { size: 11 } }, grid: { color: gridColor } }
+        }
+      }
+    });
+  }
 }
 
 // ═══ 모의고사 데이터 — LocalStorage 독립 저장 ═══
@@ -4810,6 +5141,50 @@ function bindEvents() {
     });
   }
 
+  // ═══ 학생 리포트 페이지 이벤트 ═══
+  const rpFrom = document.getElementById('rp-from');
+  const rpTo = document.getElementById('rp-to');
+  const rpMonth = document.getElementById('rp-month');
+  if (rpFrom) {
+    rpFrom.addEventListener('change', () => {
+      _reportState.sessionFrom = rpFrom.value;
+      render();
+    });
+  }
+  if (rpTo) {
+    rpTo.addEventListener('change', () => {
+      _reportState.sessionTo = rpTo.value;
+      render();
+    });
+  }
+  if (rpMonth) {
+    rpMonth.addEventListener('change', () => {
+      state.selectedExamMonth = rpMonth.value;
+      render();
+    });
+  }
+
+  // 실기 종목 체크박스
+  const sportChecks = document.getElementById('rp-sport-checks');
+  if (sportChecks) {
+    sportChecks.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        _reportState.sportChecked[cb.value] = cb.checked;
+        render();
+      });
+    });
+  }
+
+  // 나의 기록으로 이동 (리포트 페이지)
+  const rpGoto = document.getElementById('rp-goto-records');
+  if (rpGoto) {
+    rpGoto.addEventListener('click', () => {
+      state.mainTab = 'records';
+      localStorage.setItem('k1-main-tab', 'records');
+      render();
+    });
+  }
+
   // 분석 시스템 탭 전환 (기존)
   document.querySelectorAll('[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -5302,7 +5677,9 @@ function bindEvents() {
 // ═══════════════════════════════════════════
 function seedTestData() {
   // 이미 시드 데이터가 있으면 스킵
-  if (localStorage.getItem('k1-seed-v3')) return;
+  if (localStorage.getItem('k1-seed-v4')) return;
+  // 이전 버전 시드 제거
+  localStorage.removeItem('k1-seed-v3');
 
   // ── 1) 차시 3개 생성 ──
   const sessions = [
@@ -5504,14 +5881,33 @@ function seedTestData() {
   // 모든 차시에 김민수 모의고사 저장 (3차시 기준이 주력이지만, 1·2차시에도 3·6월 데이터 넣기)
   const kimId = 'student-001';
 
-  // 1차시: 3월만
-  saveMockExam(kimId, 'session-001', '3월', JSON.parse(JSON.stringify(kimMock['3월'])));
+  // 각 차시에 3월 모의고사 성적 저장 (차시별 점진적 향상 → 그래프 추이 표시)
+  // 1차시: 3월 — 기초 수준
+  saveMockExam(kimId, 'session-001', '3월', {
+    korean: { subject: '화작', grade: 4, rawScore: 70, standardScore: 108, percentile: 72 },
+    math: { subject: '미적분', grade: 4, rawScore: 65, standardScore: 105, percentile: 68 },
+    inquiry: {
+      inquiry1: { subject: '생윤', rawScore: 32, standardScore: 50, percentile: 64 },
+      inquiry2: { subject: '사문', rawScore: 30, standardScore: 48, percentile: 58 }
+    },
+    english: { grade: 4 },
+    koreanHistory: { grade: 3 }
+  });
 
-  // 2차시: 3월, 6월
-  saveMockExam(kimId, 'session-002', '3월', JSON.parse(JSON.stringify(kimMock['3월'])));
+  // 2차시: 3월 — 소폭 향상
+  saveMockExam(kimId, 'session-002', '3월', {
+    korean: { subject: '화작', grade: 3, rawScore: 78, standardScore: 118, percentile: 85 },
+    math: { subject: '미적분', grade: 3, rawScore: 72, standardScore: 115, percentile: 82 },
+    inquiry: {
+      inquiry1: { subject: '생윤', rawScore: 38, standardScore: 58, percentile: 78 },
+      inquiry2: { subject: '사문', rawScore: 35, standardScore: 55, percentile: 72 }
+    },
+    english: { grade: 3 },
+    koreanHistory: { grade: 2 }
+  });
   saveMockExam(kimId, 'session-002', '6월', JSON.parse(JSON.stringify(kimMock['6월'])));
 
-  // 3차시: 3월, 6월, 9월, 11월 전부
+  // 3차시: 전 시행월 저장 (최신 차시 = 최고 성적)
   saveMockExam(kimId, 'session-003', '3월', JSON.parse(JSON.stringify(kimMock['3월'])));
   saveMockExam(kimId, 'session-003', '6월', JSON.parse(JSON.stringify(kimMock['6월'])));
   saveMockExam(kimId, 'session-003', '9월', JSON.parse(JSON.stringify(kimMock['9월'])));
@@ -5574,7 +5970,7 @@ function seedTestData() {
   });
 
   // 시드 완료 플래그
-  localStorage.setItem('k1-seed-v3', 'true');
+  localStorage.setItem('k1-seed-v4', 'true');
   console.log('[K1] 테스트 데이터 시드 완료 — 3차시, 3학생, 모의고사 다수');
 
   // state도 갱신
