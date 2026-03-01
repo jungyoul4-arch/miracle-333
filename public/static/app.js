@@ -200,30 +200,85 @@ function getNextSessionNumber(sessions) {
 }
 
 // ═══ 비공식 기록 표 — 컬럼 정의 ═══
+const SUBJECTS_INQUIRY = [
+  '생윤', '윤사', '한지', '세지', '동사', '세사', '사문', '정법', '경제',
+  '물1', '화1', '생1', '지1', '물2', '화2', '생2', '지2',
+  '직업탐구'
+];
+
 const RECORD_COLUMNS = [
   // 기본 정보
   { key: 'studentName', label: '이름', group: 'info', type: 'text', required: true, width: 80, sticky: true },
   { key: 'school', label: '학교', group: 'info', type: 'text', required: true, width: 100 },
   { key: 'grade', label: '학년', group: 'info', type: 'number', required: true, width: 50, min: 1, max: 3, step: 1 },
   { key: 'class', label: '반', group: 'info', type: 'text', required: false, width: 50 },
-  // 성적
+  // 내신
   { key: 'gpa', label: '내신', group: 'score', type: 'number', required: false, width: 55, min: 1.0, max: 9.0, step: 0.1 },
-  { key: 'mockExamGrade', label: '모의등급', group: 'score', type: 'number', required: false, width: 65, min: 1, max: 9, step: 1 },
-  { key: 'koreanScore', label: '국어', group: 'score', type: 'number', required: false, width: 55, min: 0, max: 100, step: 1 },
-  { key: 'mathScore', label: '수학', group: 'score', type: 'number', required: false, width: 55, min: 0, max: 100, step: 1 },
-  { key: 'englishGrade', label: '영어', group: 'score', type: 'number', required: false, width: 55, min: 1, max: 9, step: 1 },
-  // 실기 기록
-  { key: 'sprint100m', label: '100m', group: 'sport', type: 'number', required: false, width: 60, min: 0, max: 30, step: 0.1, unit: '초' },
-  { key: 'standingLongJump', label: '멀리뛰기', group: 'sport', type: 'number', required: false, width: 70, min: 0, max: 400, step: 1, unit: 'cm' },
-  { key: 'medicineBall', label: '메디신볼', group: 'sport', type: 'number', required: false, width: 70, min: 0, max: 20, step: 0.1, unit: 'm' },
-  { key: 'shuttleRun', label: '왕복달리기', group: 'sport', type: 'number', required: false, width: 75, min: 0, max: 200, step: 1, unit: '회' },
-  { key: 'sitUps', label: '윗몸일으키기', group: 'sport', type: 'number', required: false, width: 80, min: 0, max: 150, step: 1, unit: '회' },
+  // 수능/모의고사 — 국어
+  { key: 'korean.subject', label: '국어선택', group: 'exam', type: 'select', options: ['언매','화작'], required: false, width: 65 },
+  { key: 'korean.grade', label: '국어등급', group: 'exam', type: 'number', required: false, width: 55, min: 1, max: 9, step: 1 },
+  { key: 'korean.rawScore', label: '국어원점수', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 100, step: 1 },
+  { key: 'korean.standardScore', label: '국어표점', group: 'exam', type: 'number', required: false, width: 60, min: 0, max: 200, step: 1 },
+  { key: 'korean.percentile', label: '국어백분위', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 100, step: 1 },
+  // 수능/모의고사 — 수학
+  { key: 'math.subject', label: '수학선택', group: 'exam', type: 'select', options: ['확통','미적분','기하'], required: false, width: 65 },
+  { key: 'math.grade', label: '수학등급', group: 'exam', type: 'number', required: false, width: 55, min: 1, max: 9, step: 1 },
+  { key: 'math.rawScore', label: '수학원점수', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 100, step: 1 },
+  { key: 'math.standardScore', label: '수학표점', group: 'exam', type: 'number', required: false, width: 60, min: 0, max: 200, step: 1 },
+  { key: 'math.percentile', label: '수학백분위', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 100, step: 1 },
+  // 탐구
+  { key: 'inquiry1.subject', label: '탐구1과목', group: 'exam', type: 'select', options: SUBJECTS_INQUIRY, required: false, width: 70 },
+  { key: 'inquiry1.rawScore', label: '탐구1원점수', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 50, step: 1 },
+  { key: 'inquiry1.standardScore', label: '탐구1표점', group: 'exam', type: 'number', required: false, width: 60, min: 0, max: 100, step: 1 },
+  { key: 'inquiry1.percentile', label: '탐구1백분위', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 100, step: 1 },
+  { key: 'inquiry2.subject', label: '탐구2과목', group: 'exam', type: 'select', options: SUBJECTS_INQUIRY, required: false, width: 70 },
+  { key: 'inquiry2.rawScore', label: '탐구2원점수', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 50, step: 1 },
+  { key: 'inquiry2.standardScore', label: '탐구2표점', group: 'exam', type: 'number', required: false, width: 60, min: 0, max: 100, step: 1 },
+  { key: 'inquiry2.percentile', label: '탐구2백분위', group: 'exam', type: 'number', required: false, width: 65, min: 0, max: 100, step: 1 },
+  // 영어·한국사
+  { key: 'englishGrade', label: '영어등급', group: 'exam', type: 'number', required: false, width: 55, min: 1, max: 9, step: 1 },
+  { key: 'koreanHistoryGrade', label: '한국사', group: 'exam', type: 'number', required: false, width: 55, min: 1, max: 9, step: 1 },
+  // 실기 기록 (SPORTS_FIELDS 기본 10개)
+  { key: 'sports.제멀', label: '제멀', group: 'sport', type: 'number', required: false, width: 60, min: 100, max: 320, step: 1, unit: 'cm' },
+  { key: 'sports.메디신볼', label: '메디신볼', group: 'sport', type: 'number', required: false, width: 65, min: 3, max: 15, step: 0.1, unit: 'm' },
+  { key: 'sports.싯업', label: '싯업', group: 'sport', type: 'number', required: false, width: 55, min: 0, max: 70, step: 1, unit: '개' },
+  { key: 'sports.50m달리기', label: '50m', group: 'sport', type: 'number', required: false, width: 55, min: 5.5, max: 12, step: 0.1, unit: '초' },
+  { key: 'sports.25m왕복', label: '25m왕복', group: 'sport', type: 'number', required: false, width: 60, min: 10, max: 25, step: 0.1, unit: '초' },
+  { key: 'sports.지그재그', label: '지그재그', group: 'sport', type: 'number', required: false, width: 60, min: 8, max: 20, step: 0.1, unit: '초' },
+  { key: 'sports.높이뛰기', label: '높이뛰기', group: 'sport', type: 'number', required: false, width: 60, min: 90, max: 200, step: 1, unit: 'cm' },
+  { key: 'sports.Z런', label: 'Z런', group: 'sport', type: 'number', required: false, width: 55, min: 8, max: 20, step: 0.1, unit: '초' },
+  { key: 'sports.배근력', label: '배근력', group: 'sport', type: 'number', required: false, width: 55, min: 30, max: 200, step: 1, unit: 'kg' },
+  { key: 'sports.좌전굴', label: '좌전굴', group: 'sport', type: 'number', required: false, width: 55, min: -10, max: 40, step: 0.5, unit: 'cm' },
   // 기타
   { key: 'notes', label: '비고', group: 'etc', type: 'text', required: false, width: 120 }
 ];
 
-const COL_GROUP_LABELS = { info: '기본 정보', score: '성적', sport: '실기 기록', etc: '기타' };
-const COL_GROUP_COLORS = { info: 'var(--accent)', score: 'var(--purple)', sport: 'var(--green)', etc: 'var(--muted)' };
+// 중첩 객체 경로 지원 유틸리티 (admin 테이블에서 사용)
+function getRecordValue(rec, key) {
+  if (!rec) return null;
+  if (!key.includes('.')) return rec[key];
+  const parts = key.split('.');
+  let obj = rec;
+  for (const p of parts) {
+    if (obj === null || obj === undefined || typeof obj !== 'object') return null;
+    obj = obj[p];
+  }
+  return obj !== undefined ? obj : null;
+}
+function setRecordValue(rec, key, value) {
+  if (!rec) return;
+  if (!key.includes('.')) { rec[key] = value; return; }
+  const parts = key.split('.');
+  let obj = rec;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!obj[parts[i]] || typeof obj[parts[i]] !== 'object') obj[parts[i]] = {};
+    obj = obj[parts[i]];
+  }
+  obj[parts[parts.length - 1]] = value;
+}
+
+const COL_GROUP_LABELS = { info: '기본 정보', score: '내신', exam: '수능/모의고사', sport: '실기 기록', etc: '기타' };
+const COL_GROUP_COLORS = { info: 'var(--accent)', score: 'var(--purple)', exam: 'var(--yellow, #FFD600)', sport: 'var(--green)', etc: 'var(--muted)' };
 
 function generateRecordId() {
   return 'rec-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
@@ -312,7 +367,7 @@ function getFilteredSortedRecords(sessionId) {
   if (s.key) {
     const col = RECORD_COLUMNS.find(c => c.key === s.key);
     records.sort((a, b) => {
-      let va = a[s.key], vb = b[s.key];
+      let va = getRecordValue(a, s.key), vb = getRecordValue(b, s.key);
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
       if (vb == null) return -1;
@@ -329,6 +384,10 @@ function getFilteredSortedRecords(sessionId) {
 function validateCellValue(colKey, value) {
   const col = RECORD_COLUMNS.find(c => c.key === colKey);
   if (!col) return { valid: true, value };
+  if (col.type === 'select') {
+    if (col.options && !col.options.includes(value) && value !== '' && value !== null) return { valid: false, msg: `허용 값: ${col.options.join(', ')}` };
+    return { valid: true, value: value || null };
+  }
   if (col.type === 'number') {
     if (value === '' || value === null || value === undefined) return { valid: true, value: null };
     const num = parseFloat(value);
@@ -702,12 +761,6 @@ function findSportsField(eventName) {
   // 최종 fallback — '점' 단위로 설정 (단위 없는 것보다 나음)
   return { key: eventName, label: eventName, unit: '점', min: 0, max: 100, step: 1, direction: 'higher' };
 }
-
-const SUBJECTS_INQUIRY = [
-  '생윤', '윤사', '한지', '세지', '동사', '세사', '사문', '정법', '경제',
-  '물1', '화1', '생1', '지1', '물2', '화2', '생2', '지2',
-  '직업탐구'
-];
 
 // ═══════════════════════════════════════════
 // ═══ 프론트엔드 수능 환산 계산 엔진 (로컬) ═══
@@ -1513,7 +1566,7 @@ function renderRecordRow(rec, idx, sessionId) {
   return `<tr class="rec-row" data-record-id="${rec.id}">
     <td class="rec-td-num rec-sticky-num">${idx + 1}</td>
     ${RECORD_COLUMNS.map(col => {
-      const val = rec[col.key];
+      const val = getRecordValue(rec, col.key);
       const displayVal = val !== null && val !== undefined && val !== '' ? escapeHtml(String(val)) : '';
       const isEditing = editing && editing.recordId === rec.id && editing.colKey === col.key;
       const stickyClass = col.sticky ? ' rec-sticky-name' : '';
@@ -1521,6 +1574,9 @@ function renderRecordRow(rec, idx, sessionId) {
       const cellClass = `rec-td${stickyClass}${requiredEmpty ? ' rec-td-required' : ''}`;
       
       if (isEditing) {
+        if (col.type === 'select' && col.options) {
+          return `<td class="${cellClass} rec-td-editing"><select class="rec-cell-input" data-cell-session="${sessionId}" data-cell-record="${rec.id}" data-cell-col="${col.key}" autofocus>${col.options.map(o => `<option value="${o}" ${o == val ? 'selected' : ''}>${o}</option>`).join('')}</select></td>`;
+        }
         const inputType = col.type === 'number' ? 'number' : 'text';
         const attrs = col.type === 'number' ? `min="${col.min || ''}" max="${col.max || ''}" step="${col.step || 'any'}"` : '';
         return `<td class="${cellClass} rec-td-editing"><input class="rec-cell-input" type="${inputType}" ${attrs} value="${displayVal}" data-cell-session="${sessionId}" data-cell-record="${rec.id}" data-cell-col="${col.key}" autofocus></td>`;
@@ -1534,9 +1590,10 @@ function renderRecordRow(rec, idx, sessionId) {
 function renderRecordCard(rec, idx, sessionId) {
   const infoFields = RECORD_COLUMNS.filter(c => c.group === 'info');
   const scoreFields = RECORD_COLUMNS.filter(c => c.group === 'score');
+  const examFields = RECORD_COLUMNS.filter(c => c.group === 'exam');
   const sportFields = RECORD_COLUMNS.filter(c => c.group === 'sport');
   const renderField = (col) => {
-    const val = rec[col.key];
+    const val = getRecordValue(rec, col.key);
     const display = val !== null && val !== undefined && val !== '' ? escapeHtml(String(val)) : '-';
     return `<div class="rec-card-field"><span class="rec-card-label">${col.label}</span><span class="rec-card-value" data-mcard-click="${rec.id}|${col.key}">${display}${col.unit && display !== '-' ? `<span class="rec-unit">${col.unit}</span>` : ''}</span></div>`;
   };
@@ -1554,6 +1611,10 @@ function renderRecordCard(rec, idx, sessionId) {
     <div class="rec-card-section">
       <div class="rec-card-section-title" style="color:${COL_GROUP_COLORS.score}">${COL_GROUP_LABELS.score}</div>
       <div class="rec-card-fields">${scoreFields.map(renderField).join('')}</div>
+    </div>
+    <div class="rec-card-section">
+      <div class="rec-card-section-title" style="color:${COL_GROUP_COLORS.exam}">${COL_GROUP_LABELS.exam}</div>
+      <div class="rec-card-fields">${examFields.map(renderField).join('')}</div>
     </div>
     <div class="rec-card-section">
       <div class="rec-card-section-title" style="color:${COL_GROUP_COLORS.sport}">${COL_GROUP_LABELS.sport}</div>
@@ -3653,12 +3714,13 @@ function bindEvents() {
       if (!record) return;
       const col = RECORD_COLUMNS.find(c => c.key === colKey);
       if (!col) return;
-      const current = record[colKey] !== null && record[colKey] !== undefined ? String(record[colKey]) : '';
-      const newVal = prompt(`${col.label}${col.unit ? ' (' + col.unit + ')' : ''} 입력:`, current);
+      const current = getRecordValue(record, colKey);
+      const currentStr = current !== null && current !== undefined ? String(current) : '';
+      const newVal = prompt(`${col.label}${col.unit ? ' (' + col.unit + ')' : ''} 입력:`, currentStr);
       if (newVal === null) return;
       const validation = validateCellValue(colKey, newVal);
       if (!validation.valid) { showToast(validation.msg); return; }
-      record[colKey] = validation.value;
+      setRecordValue(record, colKey, validation.value);
       saveSessions(state.sessions);
       render();
     });
@@ -3685,7 +3747,7 @@ function bindEvents() {
       if (session) {
         const record = (session.records || []).find(r => r.id === rid);
         if (record) {
-          record[colKey] = validation.value;
+          setRecordValue(record, colKey, validation.value);
           saveSessions(state.sessions);
         }
       }
@@ -3723,6 +3785,10 @@ function bindEvents() {
       else if (e.key === 'Escape') { state.editingCell = null; render(); }
       else if (e.key === 'Tab') { e.preventDefault(); commitCell(true); }
     });
+    // select 요소는 change 이벤트로 즉시 커밋
+    if (cellInput.tagName === 'SELECT') {
+      cellInput.addEventListener('change', () => commitCell(false));
+    }
     cellInput.addEventListener('blur', () => {
       // 약간의 지연으로 다른 셀 클릭과 충돌 방지
       setTimeout(() => {
@@ -3821,7 +3887,7 @@ function bindEvents() {
           if (i < cols.length && cols[i].trim()) {
             const val = cols[i].trim();
             const v = validateCellValue(col.key, val);
-            if (v.valid) rec[col.key] = v.value;
+            if (v.valid) setRecordValue(rec, col.key, v.value);
           }
         });
         saveRecordToSession(sid, rec);
