@@ -5297,10 +5297,297 @@ function bindEvents() {
   }
 }
 
+// ═══════════════════════════════════════════
+// ═══ 테스트 데이터 시드 (SEED) ═══
+// ═══════════════════════════════════════════
+function seedTestData() {
+  // 이미 시드 데이터가 있으면 스킵
+  if (localStorage.getItem('k1-seed-v3')) return;
+
+  // ── 1) 차시 3개 생성 ──
+  const sessions = [
+    {
+      id: 'session-001', number: 1, date: '2025-03-01', title: '3월 첫 측정',
+      records: []
+    },
+    {
+      id: 'session-002', number: 2, date: '2025-03-25', title: '3월 말 측정',
+      records: []
+    },
+    {
+      id: 'session-003', number: 3, date: '2025-04-15', title: '4월 중간 측정',
+      records: []
+    }
+  ];
+
+  // ── 2) 김민수 실기 기록 (차시별 점진적 향상) ──
+  const kimRecords = [
+    // 1차시 — 기초 측정
+    {
+      id: 'student-001', studentName: '김민수', school: 'OO고등학교', grade: 2, class: '3',
+      gpa: 2.8,
+      sports: {
+        '제멀': 228, '메디신볼': 7.8, '싯업': 38, '50m달리기': 7.9,
+        '25m왕복': 15.2, '지그재그': 13.2, '높이뛰기': 130,
+        'Z런': 13.3, '배근력': 90, '좌전굴': 16,
+        '오래달리기': 62, '사이드스텝': 38, '배구': 15, '농구': 12
+      },
+      exams: {
+        '3월': createEmptyExam(), '6월': createEmptyExam(),
+        '9월': createEmptyExam(), '11월': createEmptyExam()
+      },
+      notes: '1차시 기초 측정', lastEditedBy: 'admin', lastEditedAt: '2025-03-01T10:00:00Z'
+    },
+    // 2차시 — 소폭 향상
+    {
+      id: 'student-001', studentName: '김민수', school: 'OO고등학교', grade: 2, class: '3',
+      gpa: 2.6,
+      sports: {
+        '제멀': 235, '메디신볼': 8.2, '싯업': 42, '50m달리기': 7.6,
+        '25m왕복': 14.8, '지그재그': 12.8, '높이뛰기': 135,
+        'Z런': 12.9, '배근력': 96, '좌전굴': 18,
+        '오래달리기': 68, '사이드스텝': 40, '배구': 18, '농구': 14
+      },
+      exams: {
+        '3월': createEmptyExam(), '6월': createEmptyExam(),
+        '9월': createEmptyExam(), '11월': createEmptyExam()
+      },
+      notes: '2차시 향상 확인', lastEditedBy: 'admin', lastEditedAt: '2025-03-25T10:00:00Z'
+    },
+    // 3차시 — 뚜렷한 향상
+    {
+      id: 'student-001', studentName: '김민수', school: 'OO고등학교', grade: 2, class: '3',
+      gpa: 2.4,
+      sports: {
+        '제멀': 242, '메디신볼': 8.6, '싯업': 45, '50m달리기': 7.3,
+        '25m왕복': 14.3, '지그재그': 12.4, '높이뛰기': 140,
+        'Z런': 12.5, '배근력': 102, '좌전굴': 20,
+        '오래달리기': 74, '사이드스텝': 43, '배구': 20, '농구': 16
+      },
+      exams: {
+        '3월': createEmptyExam(), '6월': createEmptyExam(),
+        '9월': createEmptyExam(), '11월': createEmptyExam()
+      },
+      notes: '3차시 목표 기록 근접', lastEditedBy: 'admin', lastEditedAt: '2025-04-15T10:00:00Z'
+    }
+  ];
+
+  // ── 3) 이지은 실기 기록 (2, 3차시만) ──
+  const leeRecords = [
+    null, // 1차시 없음
+    {
+      id: 'student-002', studentName: '이지은', school: '△△고등학교', grade: 2, class: '1',
+      gpa: 1.8,
+      sports: {
+        '제멀': 195, '메디신볼': 6.2, '싯업': 35, '50m달리기': 8.5,
+        '25m왕복': 16.0, '지그재그': 14.0, '높이뛰기': 120,
+        'Z런': 14.2, '배근력': 72, '좌전굴': 22
+      },
+      exams: { '3월': createEmptyExam(), '6월': createEmptyExam(), '9월': createEmptyExam(), '11월': createEmptyExam() },
+      notes: '', lastEditedBy: 'admin', lastEditedAt: '2025-03-25T10:00:00Z'
+    },
+    {
+      id: 'student-002', studentName: '이지은', school: '△△고등학교', grade: 2, class: '1',
+      gpa: 1.7,
+      sports: {
+        '제멀': 200, '메디신볼': 6.5, '싯업': 38, '50m달리기': 8.2,
+        '25m왕복': 15.6, '지그재그': 13.6, '높이뛰기': 125,
+        'Z런': 13.8, '배근력': 78, '좌전굴': 24
+      },
+      exams: { '3월': createEmptyExam(), '6월': createEmptyExam(), '9월': createEmptyExam(), '11월': createEmptyExam() },
+      notes: '', lastEditedBy: 'admin', lastEditedAt: '2025-04-15T10:00:00Z'
+    }
+  ];
+
+  // ── 4) 박준영 실기 기록 (1, 2, 3차시) ──
+  const parkRecords = [
+    {
+      id: 'student-003', studentName: '박준영', school: '□□고등학교', grade: 3, class: '2',
+      gpa: 3.2,
+      sports: {
+        '제멀': 255, '메디신볼': 9.0, '싯업': 48, '50m달리기': 7.2,
+        '25m왕복': 14.0, '지그재그': 12.0, '높이뛰기': 145,
+        'Z런': 12.2, '배근력': 110, '좌전굴': 15
+      },
+      exams: { '3월': createEmptyExam(), '6월': createEmptyExam(), '9월': createEmptyExam(), '11월': createEmptyExam() },
+      notes: '', lastEditedBy: 'admin', lastEditedAt: '2025-03-01T10:00:00Z'
+    },
+    {
+      id: 'student-003', studentName: '박준영', school: '□□고등학교', grade: 3, class: '2',
+      gpa: 3.0,
+      sports: {
+        '제멀': 260, '메디신볼': 9.4, '싯업': 50, '50m달리기': 7.0,
+        '25m왕복': 13.6, '지그재그': 11.7, '높이뛰기': 150,
+        'Z런': 11.9, '배근력': 115, '좌전굴': 17
+      },
+      exams: { '3월': createEmptyExam(), '6월': createEmptyExam(), '9월': createEmptyExam(), '11월': createEmptyExam() },
+      notes: '', lastEditedBy: 'admin', lastEditedAt: '2025-03-25T10:00:00Z'
+    },
+    {
+      id: 'student-003', studentName: '박준영', school: '□□고등학교', grade: 3, class: '2',
+      gpa: 2.8,
+      sports: {
+        '제멀': 268, '메디신볼': 9.8, '싯업': 53, '50m달리기': 6.8,
+        '25m왕복': 13.2, '지그재그': 11.4, '높이뛰기': 155,
+        'Z런': 11.6, '배근력': 120, '좌전굴': 19
+      },
+      exams: { '3월': createEmptyExam(), '6월': createEmptyExam(), '9월': createEmptyExam(), '11월': createEmptyExam() },
+      notes: '', lastEditedBy: 'admin', lastEditedAt: '2025-04-15T10:00:00Z'
+    }
+  ];
+
+  // 세션에 기록 추가
+  sessions[0].records.push(kimRecords[0]);
+  sessions[0].records.push(parkRecords[0]);
+
+  sessions[1].records.push(kimRecords[1]);
+  sessions[1].records.push(leeRecords[1]);
+  sessions[1].records.push(parkRecords[1]);
+
+  sessions[2].records.push(kimRecords[2]);
+  sessions[2].records.push(leeRecords[2]);
+  sessions[2].records.push(parkRecords[2]);
+
+  // 세션 저장
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
+  localStorage.setItem(SESSION_SELECTED_KEY, 'session-003'); // 3차시 선택
+
+  // ── 5) 김민수 모의고사 성적 (mockExam 형식, 차시×시행월) ──
+  // 3차시(최신) × 4개월 전부 입력
+  const kimMock = {
+    // 3월 모의고사 — 기초 수준
+    '3월': {
+      korean: { subject: '화작', grade: 3, rawScore: 78, standardScore: 118, percentile: 85 },
+      math: { subject: '미적분', grade: 3, rawScore: 72, standardScore: 115, percentile: 82 },
+      inquiry: {
+        inquiry1: { subject: '생윤', rawScore: 38, standardScore: 58, percentile: 78 },
+        inquiry2: { subject: '사문', rawScore: 35, standardScore: 55, percentile: 72 }
+      },
+      english: { grade: 3 },
+      koreanHistory: { grade: 2 }
+    },
+    // 6월 모의고사 — 향상
+    '6월': {
+      korean: { subject: '화작', grade: 2, rawScore: 85, standardScore: 128, percentile: 92 },
+      math: { subject: '미적분', grade: 2, rawScore: 80, standardScore: 125, percentile: 88 },
+      inquiry: {
+        inquiry1: { subject: '생윤', rawScore: 42, standardScore: 62, percentile: 86 },
+        inquiry2: { subject: '사문', rawScore: 40, standardScore: 60, percentile: 80 }
+      },
+      english: { grade: 2 },
+      koreanHistory: { grade: 2 }
+    },
+    // 9월 모의고사 — 뚜렷한 향상
+    '9월': {
+      korean: { subject: '화작', grade: 2, rawScore: 89, standardScore: 134, percentile: 95 },
+      math: { subject: '미적분', grade: 2, rawScore: 84, standardScore: 130, percentile: 91 },
+      inquiry: {
+        inquiry1: { subject: '생윤', rawScore: 45, standardScore: 65, percentile: 91 },
+        inquiry2: { subject: '사문', rawScore: 43, standardScore: 63, percentile: 85 }
+      },
+      english: { grade: 2 },
+      koreanHistory: { grade: 1 }
+    },
+    // 11월 수능 — 최종 성적
+    '11월': {
+      korean: { subject: '화작', grade: 2, rawScore: 92, standardScore: 138, percentile: 97 },
+      math: { subject: '미적분', grade: 2, rawScore: 88, standardScore: 135, percentile: 94 },
+      inquiry: {
+        inquiry1: { subject: '생윤', rawScore: 47, standardScore: 68, percentile: 94 },
+        inquiry2: { subject: '사문', rawScore: 45, standardScore: 65, percentile: 88 }
+      },
+      english: { grade: 2 },
+      koreanHistory: { grade: 1 }
+    }
+  };
+
+  // 모든 차시에 김민수 모의고사 저장 (3차시 기준이 주력이지만, 1·2차시에도 3·6월 데이터 넣기)
+  const kimId = 'student-001';
+
+  // 1차시: 3월만
+  saveMockExam(kimId, 'session-001', '3월', JSON.parse(JSON.stringify(kimMock['3월'])));
+
+  // 2차시: 3월, 6월
+  saveMockExam(kimId, 'session-002', '3월', JSON.parse(JSON.stringify(kimMock['3월'])));
+  saveMockExam(kimId, 'session-002', '6월', JSON.parse(JSON.stringify(kimMock['6월'])));
+
+  // 3차시: 3월, 6월, 9월, 11월 전부
+  saveMockExam(kimId, 'session-003', '3월', JSON.parse(JSON.stringify(kimMock['3월'])));
+  saveMockExam(kimId, 'session-003', '6월', JSON.parse(JSON.stringify(kimMock['6월'])));
+  saveMockExam(kimId, 'session-003', '9월', JSON.parse(JSON.stringify(kimMock['9월'])));
+  saveMockExam(kimId, 'session-003', '11월', JSON.parse(JSON.stringify(kimMock['11월'])));
+
+  // ── 6) 이지은 모의고사 (3차시, 6월·9월만) ──
+  const leeId = 'student-002';
+  saveMockExam(leeId, 'session-003', '6월', {
+    korean: { subject: '언매', grade: 1, rawScore: 95, standardScore: 142, percentile: 99 },
+    math: { subject: '확통', grade: 2, rawScore: 82, standardScore: 126, percentile: 90 },
+    inquiry: {
+      inquiry1: { subject: '한지', rawScore: 44, standardScore: 64, percentile: 88 },
+      inquiry2: { subject: '세지', rawScore: 42, standardScore: 62, percentile: 84 }
+    },
+    english: { grade: 1 },
+    koreanHistory: { grade: 1 }
+  });
+  saveMockExam(leeId, 'session-003', '9월', {
+    korean: { subject: '언매', grade: 1, rawScore: 97, standardScore: 145, percentile: 99 },
+    math: { subject: '확통', grade: 1, rawScore: 90, standardScore: 140, percentile: 96 },
+    inquiry: {
+      inquiry1: { subject: '한지', rawScore: 46, standardScore: 67, percentile: 92 },
+      inquiry2: { subject: '세지', rawScore: 44, standardScore: 64, percentile: 87 }
+    },
+    english: { grade: 1 },
+    koreanHistory: { grade: 1 }
+  });
+
+  // ── 7) 박준영 모의고사 (3차시, 3월·6월·9월) ──
+  const parkId = 'student-003';
+  saveMockExam(parkId, 'session-003', '3월', {
+    korean: { subject: '화작', grade: 4, rawScore: 65, standardScore: 105, percentile: 68 },
+    math: { subject: '기하', grade: 3, rawScore: 74, standardScore: 118, percentile: 80 },
+    inquiry: {
+      inquiry1: { subject: '물1', rawScore: 36, standardScore: 56, percentile: 70 },
+      inquiry2: { subject: '화1', rawScore: 33, standardScore: 52, percentile: 64 }
+    },
+    english: { grade: 4 },
+    koreanHistory: { grade: 3 }
+  });
+  saveMockExam(parkId, 'session-003', '6월', {
+    korean: { subject: '화작', grade: 3, rawScore: 75, standardScore: 116, percentile: 80 },
+    math: { subject: '기하', grade: 3, rawScore: 78, standardScore: 122, percentile: 85 },
+    inquiry: {
+      inquiry1: { subject: '물1', rawScore: 40, standardScore: 60, percentile: 78 },
+      inquiry2: { subject: '화1', rawScore: 37, standardScore: 57, percentile: 72 }
+    },
+    english: { grade: 3 },
+    koreanHistory: { grade: 2 }
+  });
+  saveMockExam(parkId, 'session-003', '9월', {
+    korean: { subject: '화작', grade: 3, rawScore: 80, standardScore: 122, percentile: 86 },
+    math: { subject: '기하', grade: 2, rawScore: 83, standardScore: 128, percentile: 90 },
+    inquiry: {
+      inquiry1: { subject: '물1', rawScore: 43, standardScore: 63, percentile: 84 },
+      inquiry2: { subject: '화1', rawScore: 40, standardScore: 59, percentile: 78 }
+    },
+    english: { grade: 3 },
+    koreanHistory: { grade: 2 }
+  });
+
+  // 시드 완료 플래그
+  localStorage.setItem('k1-seed-v3', 'true');
+  console.log('[K1] 테스트 데이터 시드 완료 — 3차시, 3학생, 모의고사 다수');
+
+  // state도 갱신
+  state.sessions = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY)) || [];
+  state.selectedSession = localStorage.getItem(SESSION_SELECTED_KEY) || null;
+}
+
 // ── 초기화 ──
 document.addEventListener('DOMContentLoaded', () => {
   // 테마 초기화
   setTheme(getTheme());
+  // 테스트 데이터 시드
+  seedTestData();
   // 메인 탭 복원
   const savedMainTab = localStorage.getItem('k1-main-tab');
   if (savedMainTab && ['records', 'analysis', 'report'].includes(savedMainTab)) {
