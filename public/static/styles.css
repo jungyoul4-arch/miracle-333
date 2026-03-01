@@ -4531,3 +4531,111 @@ body,
     min-height: 220px;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   리포트 Part 4b: 강점/약점 · 백분위 · 테이블
+   ═══════════════════════════════════════════════ */
+
+/* ── 강점/약점 카드 ── */
+.rp-sw-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 13px; color: var(--text); padding: 7px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  line-height: 1.5;
+}
+.rp-sw-item:last-child { border-bottom: none; }
+.rp-sw-icon { flex-shrink: 0; font-size: 15px; }
+.rp-sw-strength { color: #4ADE80; }
+.rp-sw-weakness { color: #FB923C; }
+.rp-sw-improve { color: var(--accent); }
+.rp-sw-item strong { color: var(--text); }
+
+.rp-empty-msg {
+  font-size: 13px; color: var(--muted); padding: 16px 0; text-align: center;
+}
+
+/* ── 백분위 바 ── */
+.rp-pct-list {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.rp-pct-row {
+  display: grid; grid-template-columns: 100px 1fr 72px; align-items: center; gap: 10px;
+}
+.rp-pct-label {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rp-pct-bar-wrap {
+  height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px;
+  overflow: hidden;
+}
+.rp-pct-bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.6s ease;
+}
+.rp-pct-value {
+  font-size: 12px; font-weight: 700; text-align: right;
+  font-family: 'Pretendard', 'Inter', monospace;
+}
+.rp-pct-note {
+  font-size: 11px; color: var(--muted); margin-top: 14px; padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,0.04); line-height: 1.6;
+}
+
+/* ── 비교 테이블 ── */
+.rp-table-wrap {
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  margin: 0 -16px; padding: 0 16px;
+}
+.rp-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  min-width: 360px;
+}
+.rp-table thead th {
+  font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+  padding: 8px 10px; text-align: center;
+  border-bottom: 2px solid rgba(255,255,255,0.08);
+  position: sticky; top: 0; background: var(--card, #0d1117);
+}
+.rp-th-label {
+  text-align: left !important; position: sticky; left: 0; z-index: 2;
+  background: var(--card, #0d1117) !important;
+}
+.rp-table tbody td {
+  padding: 8px 10px; text-align: center; color: var(--text);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  font-family: 'Pretendard', 'Inter', monospace;
+}
+.rp-td-label {
+  text-align: left !important; font-weight: 600; color: var(--text);
+  white-space: nowrap; position: sticky; left: 0; z-index: 1;
+  background: var(--card, #0d1117);
+  font-family: 'Pretendard', 'SUIT Variable', sans-serif;
+}
+.rp-td-empty {
+  color: var(--muted); opacity: 0.4;
+}
+.rp-td-up {
+  color: #4ADE80; font-weight: 600;
+}
+.rp-td-down {
+  color: #F87171; font-weight: 600;
+}
+.rp-td-unit {
+  font-size: 10px; color: var(--muted); margin-left: 1px;
+}
+.rp-td-badge {
+  font-size: 11px;
+}
+
+/* ── 모바일 반응형 (Part 4b) ── */
+@media (max-width: 600px) {
+  .rp-pct-row {
+    grid-template-columns: 80px 1fr 60px; gap: 6px;
+  }
+  .rp-pct-label { font-size: 11px; }
+  .rp-pct-value { font-size: 11px; }
+  .rp-table { font-size: 12px; }
+  .rp-table thead th { padding: 6px 8px; font-size: 10px; }
+  .rp-table tbody td { padding: 6px 8px; }
+}

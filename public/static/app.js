@@ -2645,7 +2645,228 @@ function renderStudentReportPage() {
     </div>
   </div>`;
 
+  // ── Part 4b: 추가 섹션 ──
+  const percentiles = calcPercentilePosition(sessions, cu.studentId, cu.studentName, month);
+  html += renderReportStrengths(rd, percentiles);
+  html += renderReportPercentileBars(percentiles);
+  html += renderReportTable(rd, month);
+
   html += `</div>`; // .rp-page
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════
+// ═══ 리포트 추가 섹션 (Part 4b) ═══
+// ═══════════════════════════════════════════════════════
+
+// 최신 차시의 전체 학생 대비 백분위 계산
+// 개별 학생 정보는 절대 노출하지 않음 — 순위 퍼센트만 반환
+function calcPercentilePosition(sessions, studentId, studentName, month) {
+  // 최신 차시 사용
+  const sorted = sessions.slice().sort((a, b) => b.number - a.number);
+  const latestSession = sorted[0];
+  if (!latestSession || !latestSession.records || latestSession.records.length < 2) return null;
+
+  const allRecords = latestSession.records;
+  const myRec = allRecords.find(r => r.id === studentId || r.studentName === studentName);
+  if (!myRec) return null;
+
+  const results = []; // { key, label, percentile(상위%), unit, group }
+
+  // 실기 항목
+  for (const f of SPORTS_FIELDS.slice(0, 10)) {
+    const myVal = myRec.sports ? myRec.sports[f.key] : null;
+    if (myVal === null || myVal === undefined || myVal === '' || myVal === 0) continue;
+
+    const allVals = allRecords
+      .map(r => r.sports ? r.sports[f.key] : null)
+      .filter(v => v !== null && v !== undefined && v !== '' && v !== 0)
+      .map(Number);
+
+    if (allVals.length < 2) continue;
+
+    // 정렬: 높을수록 좋은 항목은 내림차순, 낮을수록 좋은 항목은 오름차순
+    const sortedVals = allVals.slice().sort((a, b) => f.direction === 'lower' ? a - b : b - a);
+    const rank = sortedVals.indexOf(Number(myVal)) + 1;
+    const pct = Math.round((rank / sortedVals.length) * 100);
+    results.push({ key: f.key, label: f.label, percentile: pct, unit: f.unit, group: 'sport', direction: f.direction });
+  }
+
+  // 모의고사 등급 (등급은 낮을수록 좋음)
+  const myMock = loadMockExam(studentId, latestSession.id, month);
+  if (myMock) {
+    const examItems = [
+      { key: 'koreanGrade', label: '국어 등급', val: myMock.korean ? myMock.korean.grade : null, group: 'exam' },
+      { key: 'mathGrade', label: '수학 등급', val: myMock.math ? myMock.math.grade : null, group: 'exam' },
+      { key: 'englishGrade', label: '영어 등급', val: myMock.english ? myMock.english.grade : null, group: 'exam' }
+    ];
+
+    for (const item of examItems) {
+      if (!item.val) continue;
+      // 다른 학생들의 같은 과목 모의고사 등급 수집
+      const allGrades = allRecords.map(r => {
+        const m = loadMockExam(r.id, latestSession.id, month);
+        if (!m) return null;
+        if (item.key === 'koreanGrade') return m.korean ? m.korean.grade : null;
+        if (item.key === 'mathGrade') return m.math ? m.math.grade : null;
+        if (item.key === 'englishGrade') return m.english ? m.english.grade : null;
+        return null;
+      }).filter(v => v !== null && v > 0);
+
+      if (allGrades.length < 2) continue;
+      const sortedG = allGrades.slice().sort((a, b) => a - b); // 등급 낮은 게 좋음
+      const rank = sortedG.indexOf(Number(item.val)) + 1;
+      const pct = Math.round((rank / sortedG.length) * 100);
+      results.push({ key: item.key, label: item.label, percentile: pct, unit: '등급', group: 'exam', direction: 'lower' });
+    }
+  }
+
+  return results.length > 0 ? results : null;
+}
+
+// 섹션1: 나의 위치 (강점/약점)
+function renderReportStrengths(rd, percentiles) {
+  let html = '<div class="rp-card">';
+  html += '<div class="rp-card-title"><i class="fas fa-trophy"></i> 나의 위치</div>';
+
+  if (!percentiles || percentiles.length === 0) {
+    html += '<div class="rp-empty-msg"><i class="fas fa-hourglass-half"></i> 데이터가 쌓이면 나의 위치를 확인할 수 있습니다</div>';
+    html += '</div>';
+    return html;
+  }
+
+  // 강점 (상위 30%)
+  const strengths = percentiles.filter(p => p.percentile <= 30);
+  // 약점 (하위 30% = 상위 70% 이상)
+  const weaknesses = percentiles.filter(p => p.percentile >= 70);
+
+  // 가장 많이 향상 — 실기 기반
+  let bestImprove = null;
+  for (const f of SPORTS_FIELDS.slice(0, 14)) {
+    const vals = rd.sports[f.key];
+    if (!vals) continue;
+    const valid = vals.filter(v => v !== null);
+    if (valid.length < 2) continue;
+    const diff = valid[valid.length - 1] - valid[0];
+    const absDiff = Math.abs(diff);
+    const improved = f.direction === 'lower' ? diff < 0 : diff > 0;
+    if (!improved) continue;
+    if (!bestImprove || absDiff > bestImprove.absDiff) {
+      const diffStr = absDiff % 1 !== 0 ? absDiff.toFixed(1) : String(absDiff);
+      bestImprove = { label: f.label, absDiff, unit: f.unit, diffStr };
+    }
+  }
+
+  if (strengths.length > 0) {
+    html += `<div class="rp-sw-item rp-sw-strength"><span class="rp-sw-icon">✅</span> <strong>강점:</strong> ${strengths.map(s => `${s.label} (상위 ${s.percentile}%)`).join(', ')}</div>`;
+  }
+  if (weaknesses.length > 0) {
+    html += `<div class="rp-sw-item rp-sw-weakness"><span class="rp-sw-icon">⚠️</span> <strong>보완 필요:</strong> ${weaknesses.map(w => `${w.label} (하위 ${100 - w.percentile}%)`).join(', ')}</div>`;
+  }
+  if (bestImprove) {
+    html += `<div class="rp-sw-item rp-sw-improve"><span class="rp-sw-icon">📈</span> <strong>가장 많이 향상:</strong> ${bestImprove.label} (${bestImprove.diffStr}${bestImprove.unit}↑)</div>`;
+  }
+  if (strengths.length === 0 && weaknesses.length === 0 && !bestImprove) {
+    html += '<div class="rp-empty-msg">아직 뚜렷한 강점/약점 패턴이 없습니다</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+// 섹션2: 항목별 백분위 바
+function renderReportPercentileBars(percentiles) {
+  let html = '<div class="rp-card">';
+  html += '<div class="rp-card-title"><i class="fas fa-chart-bar"></i> 항목별 내 위치</div>';
+
+  if (!percentiles || percentiles.length === 0) {
+    html += '<div class="rp-empty-msg"><i class="fas fa-hourglass-half"></i> 비교 데이터가 준비되면 표시됩니다</div>';
+    html += '</div>';
+    return html;
+  }
+
+  html += '<div class="rp-pct-list">';
+  for (const p of percentiles) {
+    const fillPct = Math.max(2, 100 - p.percentile); // 상위 %가 낮을수록 바가 넓음
+    const color = p.percentile <= 30 ? '#4ADE80' : p.percentile >= 70 ? '#FB923C' : '#00CFFD';
+    html += `
+    <div class="rp-pct-row">
+      <div class="rp-pct-label">${p.label}</div>
+      <div class="rp-pct-bar-wrap">
+        <div class="rp-pct-bar-fill" style="width:${fillPct}%;background:${color}"></div>
+      </div>
+      <div class="rp-pct-value" style="color:${color}">상위 ${p.percentile}%</div>
+    </div>`;
+  }
+  html += '</div>';
+  html += '<div class="rp-pct-note">* 전체 수강생 대비 나의 상대적 위치입니다<br>(개별 학생 정보는 포함되지 않습니다)</div>';
+  html += '</div>';
+  return html;
+}
+
+// 섹션3: 차시별 기록 비교 테이블
+function renderReportTable(rd, month) {
+  if (!rd || rd.sessions.length === 0) return '';
+
+  let html = '<div class="rp-card">';
+  html += '<div class="rp-card-title"><i class="fas fa-table"></i> 차시별 내 기록 <span class="rp-card-sub">(' + month + ' 기준)</span></div>';
+  html += '<div class="rp-table-wrap"><table class="rp-table"><thead><tr><th class="rp-th-label">항목</th>';
+
+  for (const s of rd.sessions) {
+    html += `<th>${s.number}차시</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  // 행 정의: [label, values[], lowerIsBetter, unit]
+  const rows = [
+    { label: '국어 등급', vals: rd.koreanGrade, lower: true, unit: '' },
+    { label: '수학 등급', vals: rd.mathGrade, lower: true, unit: '' },
+    { label: '영어 등급', vals: rd.englishGrade, lower: true, unit: '' },
+    { label: '국어 원점수', vals: rd.koreanRaw, lower: false, unit: '점' },
+    { label: '수학 원점수', vals: rd.mathRaw, lower: false, unit: '점' }
+  ];
+
+  // 실기 종목 추가
+  for (const f of SPORTS_FIELDS.slice(0, 14)) {
+    const vals = rd.sports[f.key];
+    if (!vals || vals.every(v => v === null)) continue;
+    rows.push({ label: f.label, vals: vals, lower: f.direction === 'lower', unit: f.unit });
+  }
+
+  for (const row of rows) {
+    html += `<tr><td class="rp-td-label">${row.label}</td>`;
+    for (let i = 0; i < row.vals.length; i++) {
+      const v = row.vals[i];
+      const isLast = i === row.vals.length - 1;
+
+      if (v === null || v === undefined) {
+        html += '<td class="rp-td-empty">-</td>';
+        continue;
+      }
+
+      // 이전 값 대비 변화
+      let cls = '';
+      let badge = '';
+      if (i > 0) {
+        const prev = row.vals[i - 1];
+        if (prev !== null && prev !== undefined) {
+          const diff = v - prev;
+          if (diff !== 0) {
+            const improved = row.lower ? diff < 0 : diff > 0;
+            cls = improved ? 'rp-td-up' : 'rp-td-down';
+            if (improved && isLast) badge = ' <span class="rp-td-badge">✅</span>';
+          }
+        }
+      }
+
+      const displayVal = typeof v === 'number' && v % 1 !== 0 ? v.toFixed(1) : v;
+      html += `<td class="${cls}">${displayVal}${row.unit ? '<span class="rp-td-unit">' + row.unit + '</span>' : ''}${badge}</td>`;
+    }
+    html += '</tr>';
+  }
+
+  html += '</tbody></table></div>';
+  html += '</div>';
   return html;
 }
 
