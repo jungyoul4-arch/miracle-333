@@ -199,6 +199,141 @@ function getNextSessionNumber(sessions) {
   return Math.max(...sessions.map(s => s.number)) + 1;
 }
 
+// ═══ 비공식 기록 표 — 컬럼 정의 ═══
+const RECORD_COLUMNS = [
+  // 기본 정보
+  { key: 'studentName', label: '이름', group: 'info', type: 'text', required: true, width: 80, sticky: true },
+  { key: 'school', label: '학교', group: 'info', type: 'text', required: true, width: 100 },
+  { key: 'grade', label: '학년', group: 'info', type: 'number', required: true, width: 50, min: 1, max: 3, step: 1 },
+  { key: 'class', label: '반', group: 'info', type: 'text', required: false, width: 50 },
+  // 성적
+  { key: 'gpa', label: '내신', group: 'score', type: 'number', required: false, width: 55, min: 1.0, max: 9.0, step: 0.1 },
+  { key: 'mockExamGrade', label: '모의등급', group: 'score', type: 'number', required: false, width: 65, min: 1, max: 9, step: 1 },
+  { key: 'koreanScore', label: '국어', group: 'score', type: 'number', required: false, width: 55, min: 0, max: 100, step: 1 },
+  { key: 'mathScore', label: '수학', group: 'score', type: 'number', required: false, width: 55, min: 0, max: 100, step: 1 },
+  { key: 'englishGrade', label: '영어', group: 'score', type: 'number', required: false, width: 55, min: 1, max: 9, step: 1 },
+  // 실기 기록
+  { key: 'sprint100m', label: '100m', group: 'sport', type: 'number', required: false, width: 60, min: 0, max: 30, step: 0.1, unit: '초' },
+  { key: 'standingLongJump', label: '멀리뛰기', group: 'sport', type: 'number', required: false, width: 70, min: 0, max: 400, step: 1, unit: 'cm' },
+  { key: 'medicineBall', label: '메디신볼', group: 'sport', type: 'number', required: false, width: 70, min: 0, max: 20, step: 0.1, unit: 'm' },
+  { key: 'shuttleRun', label: '왕복달리기', group: 'sport', type: 'number', required: false, width: 75, min: 0, max: 200, step: 1, unit: '회' },
+  { key: 'sitUps', label: '윗몸일으키기', group: 'sport', type: 'number', required: false, width: 80, min: 0, max: 150, step: 1, unit: '회' },
+  // 기타
+  { key: 'notes', label: '비고', group: 'etc', type: 'text', required: false, width: 120 }
+];
+
+const COL_GROUP_LABELS = { info: '기본 정보', score: '성적', sport: '실기 기록', etc: '기타' };
+const COL_GROUP_COLORS = { info: 'var(--accent)', score: 'var(--purple)', sport: 'var(--green)', etc: 'var(--muted)' };
+
+function generateRecordId() {
+  return 'rec-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+}
+
+function createEmptyRecord() {
+  return {
+    id: generateRecordId(),
+    studentName: '', school: '', grade: null, class: '',
+    gpa: null, mockExamGrade: null, koreanScore: null, mathScore: null, englishGrade: null,
+    sprint100m: null, standingLongJump: null, medicineBall: null, shuttleRun: null, sitUps: null,
+    notes: ''
+  };
+}
+
+function getSessionRecords(sessionId) {
+  const session = state.sessions.find(s => s.id === sessionId);
+  return session ? (session.records || []) : [];
+}
+
+function saveRecordToSession(sessionId, record) {
+  const session = state.sessions.find(s => s.id === sessionId);
+  if (!session) return;
+  if (!session.records) session.records = [];
+  const idx = session.records.findIndex(r => r.id === record.id);
+  if (idx >= 0) session.records[idx] = record;
+  else session.records.push(record);
+  saveSessions(state.sessions);
+}
+
+function deleteRecordFromSession(sessionId, recordId) {
+  const session = state.sessions.find(s => s.id === sessionId);
+  if (!session || !session.records) return;
+  session.records = session.records.filter(r => r.id !== recordId);
+  saveSessions(state.sessions);
+}
+
+function copyRecordsFromPreviousSession(targetSessionId) {
+  const targetSession = state.sessions.find(s => s.id === targetSessionId);
+  if (!targetSession) return 0;
+  // 차시 번호가 바로 이전인 차시 찾기
+  const sorted = state.sessions.slice().sort((a, b) => b.number - a.number);
+  const targetIdx = sorted.findIndex(s => s.id === targetSessionId);
+  const prevSession = sorted[targetIdx + 1];
+  if (!prevSession || !prevSession.records || !prevSession.records.length) return 0;
+  
+  const copied = prevSession.records.map(r => ({
+    ...createEmptyRecord(),
+    studentName: r.studentName,
+    school: r.school,
+    grade: r.grade,
+    class: r.class
+  }));
+  targetSession.records = copied;
+  saveSessions(state.sessions);
+  return copied.length;
+}
+
+function getFilteredSortedRecords(sessionId) {
+  let records = getSessionRecords(sessionId).slice();
+  const f = state.recordFilter;
+  
+  // 필터: 학교
+  if (f.school !== '전체') records = records.filter(r => r.school === f.school);
+  // 필터: 학년
+  if (f.grades.length < 3) records = records.filter(r => f.grades.includes(r.grade));
+  // 필터: 검색
+  if (f.search) {
+    const q = f.search.toLowerCase();
+    records = records.filter(r => (r.studentName || '').toLowerCase().includes(q));
+  }
+  // 정렬
+  const s = state.recordSort;
+  if (s.key) {
+    const col = RECORD_COLUMNS.find(c => c.key === s.key);
+    records.sort((a, b) => {
+      let va = a[s.key], vb = b[s.key];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (col && col.type === 'number') { va = Number(va); vb = Number(vb); }
+      else { va = String(va).toLowerCase(); vb = String(vb).toLowerCase(); }
+      if (va < vb) return s.asc ? -1 : 1;
+      if (va > vb) return s.asc ? 1 : -1;
+      return 0;
+    });
+  }
+  return records;
+}
+
+function validateCellValue(colKey, value) {
+  const col = RECORD_COLUMNS.find(c => c.key === colKey);
+  if (!col) return { valid: true, value };
+  if (col.type === 'number') {
+    if (value === '' || value === null || value === undefined) return { valid: true, value: null };
+    const num = parseFloat(value);
+    if (isNaN(num)) return { valid: false, msg: '숫자를 입력하세요' };
+    if (col.min !== undefined && num < col.min) return { valid: false, msg: `최소값: ${col.min}` };
+    if (col.max !== undefined && num > col.max) return { valid: false, msg: `최대값: ${col.max}` };
+    return { valid: true, value: num };
+  }
+  return { valid: true, value: String(value) };
+}
+
+function getUniqueSchools(sessionId) {
+  const records = getSessionRecords(sessionId);
+  const schools = [...new Set(records.map(r => r.school).filter(Boolean))];
+  return schools.sort();
+}
+
 // ── 상태 관리 ──
 const state = {
   mainTab: 'records', // records, analysis, report — 최상위 네비게이션
@@ -231,7 +366,11 @@ const state = {
   // 차시 관리
   sessions: loadSessions(),
   selectedSession: loadSelectedSession(),
-  sessionModal: null // null | 'create' | 'edit'
+  sessionModal: null, // null | 'create' | 'edit'
+  // 기록 표 상태
+  recordSort: { key: null, asc: true },
+  recordFilter: { school: '전체', grades: [1, 2, 3], search: '' },
+  editingCell: null // { recordId, colKey }
 };
 
 // ═══ 프론트엔드 입력 검증 ═══
@@ -1022,17 +1161,19 @@ function renderRecordsPage() {
     <div class="session-content-area">
       ${selectedObj ? `
       <div class="session-content-header">
-        <span class="session-content-badge">${selectedObj.number}차시</span>
-        <span class="session-content-date">${formatSessionDate(selectedObj.date)}</span>
-        ${selectedObj.title ? `<span class="session-content-title-text">&mdash; ${escapeHtml(selectedObj.title)}</span>` : ''}
-      </div>
-      <div class="session-content-body">
-        <div class="session-no-records">
-          <i class="fas fa-inbox" style="font-size:32px;color:var(--muted);margin-bottom:12px"></i>
-          <div>이 차시에 아직 기록이 없습니다</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px">2단계에서 학생 기록 표가 추가됩니다</div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex:1">
+          <span class="session-content-badge">${selectedObj.number}차시</span>
+          <span class="session-content-date">${formatSessionDate(selectedObj.date)}</span>
+          ${selectedObj.title ? `<span class="session-content-title-text">&mdash; ${escapeHtml(selectedObj.title)}</span>` : ''}
+          <span class="records-count">${(selectedObj.records || []).length}명</span>
         </div>
-      </div>` : `
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${state.sessions.length > 1 && (!selectedObj.records || !selectedObj.records.length) ? `<button class="rec-toolbar-btn" id="btn-copy-prev" title="이전 차시 학생 목록 가져오기"><i class="fas fa-copy"></i> 이전 차시 복사</button>` : ''}
+          <button class="rec-toolbar-btn rec-toolbar-btn-primary" id="btn-add-record"><i class="fas fa-plus"></i> 학생 추가</button>
+        </div>
+      </div>
+      ${renderRecordsToolbar(selectedObj)}
+      ${renderRecordsTable(selectedObj)}` : `
       <div class="session-content-body">
         <div class="session-no-records">
           <i class="fas fa-hand-pointer" style="font-size:32px;color:var(--muted);margin-bottom:12px"></i>
@@ -1043,6 +1184,148 @@ function renderRecordsPage() {
     </div>`}
 
     ${renderSessionModal()}
+  </div>`;
+}
+
+function renderRecordsToolbar(session) {
+  const schools = getUniqueSchools(session.id);
+  const f = state.recordFilter;
+  return `
+  <div class="rec-toolbar">
+    <div class="rec-search-wrap">
+      <i class="fas fa-search rec-search-icon"></i>
+      <input type="text" class="rec-search-input" id="rec-search" placeholder="학생 이름 검색..." value="${escapeHtml(f.search)}">
+    </div>
+    <div class="rec-filter-group">
+      <select class="rec-filter-select" id="rec-filter-school">
+        <option value="전체" ${f.school === '전체' ? 'selected' : ''}>학교: 전체</option>
+        ${schools.map(s => `<option value="${escapeHtml(s)}" ${f.school === s ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('')}
+      </select>
+      <div class="rec-grade-checks">
+        ${[1,2,3].map(g => `<label class="rec-grade-check"><input type="checkbox" data-grade-filter="${g}" ${f.grades.includes(g) ? 'checked' : ''}><span>${g}학년</span></label>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderRecordsTable(session) {
+  const records = getFilteredSortedRecords(session.id);
+  const allRecords = getSessionRecords(session.id);
+  
+  if (!allRecords.length) {
+    return `
+    <div class="session-content-body">
+      <div class="session-no-records">
+        <i class="fas fa-user-plus" style="font-size:32px;color:var(--accent);margin-bottom:12px"></i>
+        <div>학생을 추가해서 기록을 시작하세요</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">"학생 추가" 버튼을 클릭하거나 엑셀에서 붙여넣기(Ctrl+V) 할 수 있습니다</div>
+      </div>
+    </div>`;
+  }
+
+  const sortKey = state.recordSort.key;
+  const sortAsc = state.recordSort.asc;
+
+  // 그룹 헤더 colspan 계산
+  const groups = [];
+  let lastGroup = null;
+  RECORD_COLUMNS.forEach(col => {
+    if (col.group !== lastGroup) {
+      groups.push({ group: col.group, count: 1 });
+      lastGroup = col.group;
+    } else {
+      groups[groups.length - 1].count++;
+    }
+  });
+
+  // 데스크톱 테이블
+  const tableHtml = `
+  <div class="rec-table-wrap" id="rec-table-wrap">
+    <table class="rec-table" id="rec-table">
+      <thead>
+        <tr class="rec-group-row">
+          <th class="rec-th-num rec-sticky-num" rowspan="2">#</th>
+          ${groups.map(g => `<th colspan="${g.count}" class="rec-group-th" style="border-bottom-color:${COL_GROUP_COLORS[g.group]}">${COL_GROUP_LABELS[g.group]}</th>`).join('')}
+          <th class="rec-th-action" rowspan="2"></th>
+        </tr>
+        <tr class="rec-col-row">
+          ${RECORD_COLUMNS.map(col => {
+            const isSorted = sortKey === col.key;
+            const arrow = isSorted ? (sortAsc ? ' ▲' : ' ▼') : '';
+            const stickyClass = col.sticky ? ' rec-sticky-name' : '';
+            return `<th class="rec-th${stickyClass}" data-sort-key="${col.key}" style="min-width:${col.width}px">${col.label}${col.unit ? `<span class="rec-unit">${col.unit}</span>` : ''}${arrow}</th>`;
+          }).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${records.length === 0 ? `<tr><td colspan="${RECORD_COLUMNS.length + 2}" style="text-align:center;padding:24px;color:var(--muted)">검색/필터 결과가 없습니다</td></tr>` : ''}
+        ${records.map((rec, idx) => renderRecordRow(rec, idx, session.id)).join('')}
+      </tbody>
+    </table>
+  </div>`;
+
+  // 모바일 카드
+  const cardsHtml = `
+  <div class="rec-cards-mobile" id="rec-cards-mobile">
+    ${records.length === 0 ? `<div style="text-align:center;padding:24px;color:var(--muted)">검색/필터 결과가 없습니다</div>` : ''}
+    ${records.map((rec, idx) => renderRecordCard(rec, idx, session.id)).join('')}
+  </div>`;
+
+  return tableHtml + cardsHtml;
+}
+
+function renderRecordRow(rec, idx, sessionId) {
+  const editing = state.editingCell;
+  return `<tr class="rec-row" data-record-id="${rec.id}">
+    <td class="rec-td-num rec-sticky-num">${idx + 1}</td>
+    ${RECORD_COLUMNS.map(col => {
+      const val = rec[col.key];
+      const displayVal = val !== null && val !== undefined && val !== '' ? escapeHtml(String(val)) : '';
+      const isEditing = editing && editing.recordId === rec.id && editing.colKey === col.key;
+      const stickyClass = col.sticky ? ' rec-sticky-name' : '';
+      const requiredEmpty = col.required && !displayVal;
+      const cellClass = `rec-td${stickyClass}${requiredEmpty ? ' rec-td-required' : ''}`;
+      
+      if (isEditing) {
+        const inputType = col.type === 'number' ? 'number' : 'text';
+        const attrs = col.type === 'number' ? `min="${col.min || ''}" max="${col.max || ''}" step="${col.step || 'any'}"` : '';
+        return `<td class="${cellClass} rec-td-editing"><input class="rec-cell-input" type="${inputType}" ${attrs} value="${displayVal}" data-cell-session="${sessionId}" data-cell-record="${rec.id}" data-cell-col="${col.key}" autofocus></td>`;
+      }
+      return `<td class="${cellClass}" data-cell-click="${rec.id}|${col.key}">${displayVal}</td>`;
+    }).join('')}
+    <td class="rec-td-action"><button class="rec-delete-btn" data-delete-record="${rec.id}" title="삭제"><i class="fas fa-trash-alt"></i></button></td>
+  </tr>`;
+}
+
+function renderRecordCard(rec, idx, sessionId) {
+  const infoFields = RECORD_COLUMNS.filter(c => c.group === 'info');
+  const scoreFields = RECORD_COLUMNS.filter(c => c.group === 'score');
+  const sportFields = RECORD_COLUMNS.filter(c => c.group === 'sport');
+  const renderField = (col) => {
+    const val = rec[col.key];
+    const display = val !== null && val !== undefined && val !== '' ? escapeHtml(String(val)) : '-';
+    return `<div class="rec-card-field"><span class="rec-card-label">${col.label}</span><span class="rec-card-value" data-mcard-click="${rec.id}|${col.key}">${display}${col.unit && display !== '-' ? `<span class="rec-unit">${col.unit}</span>` : ''}</span></div>`;
+  };
+  return `
+  <div class="rec-card" data-record-id="${rec.id}">
+    <div class="rec-card-header">
+      <span class="rec-card-num">${idx + 1}</span>
+      <span class="rec-card-name">${escapeHtml(rec.studentName || '(이름 없음)')}</span>
+      <button class="rec-delete-btn" data-delete-record="${rec.id}" title="삭제"><i class="fas fa-trash-alt"></i></button>
+    </div>
+    <div class="rec-card-section">
+      <div class="rec-card-section-title" style="color:${COL_GROUP_COLORS.info}">${COL_GROUP_LABELS.info}</div>
+      <div class="rec-card-fields">${infoFields.map(renderField).join('')}</div>
+    </div>
+    <div class="rec-card-section">
+      <div class="rec-card-section-title" style="color:${COL_GROUP_COLORS.score}">${COL_GROUP_LABELS.score}</div>
+      <div class="rec-card-fields">${scoreFields.map(renderField).join('')}</div>
+    </div>
+    <div class="rec-card-section">
+      <div class="rec-card-section-title" style="color:${COL_GROUP_COLORS.sport}">${COL_GROUP_LABELS.sport}</div>
+      <div class="rec-card-fields">${sportFields.map(renderField).join('')}</div>
+    </div>
+    ${rec.notes ? `<div class="rec-card-notes"><i class="fas fa-sticky-note"></i> ${escapeHtml(rec.notes)}</div>` : ''}
   </div>`;
 }
 
@@ -2689,6 +2972,241 @@ function bindEvents() {
     modalConfirm.addEventListener('click', () => {
       if (state.sessionModal === 'edit') handleSessionUpdate();
       else handleSessionCreate();
+    });
+  }
+
+  // ── 비공식 기록 표 이벤트 ──
+  // 학생 추가 버튼
+  const addRecBtn = document.getElementById('btn-add-record');
+  if (addRecBtn) {
+    addRecBtn.addEventListener('click', () => {
+      const sid = state.selectedSession;
+      if (!sid) return;
+      const newRec = createEmptyRecord();
+      saveRecordToSession(sid, newRec);
+      state.editingCell = { recordId: newRec.id, colKey: 'studentName' };
+      render();
+    });
+  }
+
+  // 이전 차시 복사 버튼
+  const copyPrevBtn = document.getElementById('btn-copy-prev');
+  if (copyPrevBtn) {
+    copyPrevBtn.addEventListener('click', () => {
+      const sid = state.selectedSession;
+      if (!sid) return;
+      const count = copyRecordsFromPreviousSession(sid);
+      if (count > 0) {
+        showToast(`이전 차시에서 ${count}명의 학생 정보를 복사했습니다.`);
+        render();
+      } else {
+        showToast('이전 차시에 복사할 학생이 없습니다.');
+      }
+    });
+  }
+
+  // 셀 클릭 → 인라인 편집
+  document.querySelectorAll('[data-cell-click]').forEach(td => {
+    td.addEventListener('click', () => {
+      const [recordId, colKey] = td.dataset.cellClick.split('|');
+      state.editingCell = { recordId, colKey };
+      render();
+      // 포커스 설정 (render 후)
+      requestAnimationFrame(() => {
+        const input = document.querySelector('.rec-cell-input');
+        if (input) { input.focus(); input.select(); }
+      });
+    });
+  });
+
+  // 모바일 카드 필드 클릭 → 인라인 편집 (프롬프트)
+  document.querySelectorAll('[data-mcard-click]').forEach(el => {
+    el.addEventListener('click', () => {
+      const [recordId, colKey] = el.dataset.mcardClick.split('|');
+      const session = state.sessions.find(s => s.id === state.selectedSession);
+      if (!session) return;
+      const record = (session.records || []).find(r => r.id === recordId);
+      if (!record) return;
+      const col = RECORD_COLUMNS.find(c => c.key === colKey);
+      if (!col) return;
+      const current = record[colKey] !== null && record[colKey] !== undefined ? String(record[colKey]) : '';
+      const newVal = prompt(`${col.label}${col.unit ? ' (' + col.unit + ')' : ''} 입력:`, current);
+      if (newVal === null) return;
+      const validation = validateCellValue(colKey, newVal);
+      if (!validation.valid) { showToast(validation.msg); return; }
+      record[colKey] = validation.value;
+      saveSessions(state.sessions);
+      render();
+    });
+  });
+
+  // 셀 편집 완료 (Enter / Esc / Tab / blur)
+  const cellInput = document.querySelector('.rec-cell-input');
+  if (cellInput) {
+    const commitCell = (moveNext) => {
+      const sid = cellInput.dataset.cellSession;
+      const rid = cellInput.dataset.cellRecord;
+      const colKey = cellInput.dataset.cellCol;
+      const value = cellInput.value;
+      const validation = validateCellValue(colKey, value);
+      
+      if (!validation.valid) {
+        cellInput.classList.add('rec-cell-invalid');
+        cellInput.title = validation.msg;
+        showToast(validation.msg);
+        return;
+      }
+
+      const session = state.sessions.find(s => s.id === sid);
+      if (session) {
+        const record = (session.records || []).find(r => r.id === rid);
+        if (record) {
+          record[colKey] = validation.value;
+          saveSessions(state.sessions);
+        }
+      }
+
+      if (moveNext) {
+        // Tab → 다음 셀
+        const colIdx = RECORD_COLUMNS.findIndex(c => c.key === colKey);
+        const records = getSessionRecords(sid);
+        const recIdx = records.findIndex(r => r.id === rid);
+        let nextColIdx = colIdx + 1;
+        let nextRecIdx = recIdx;
+        if (nextColIdx >= RECORD_COLUMNS.length) {
+          nextColIdx = 0;
+          nextRecIdx = recIdx + 1;
+        }
+        if (nextRecIdx < records.length) {
+          state.editingCell = { recordId: records[nextRecIdx].id, colKey: RECORD_COLUMNS[nextColIdx].key };
+        } else {
+          state.editingCell = null;
+        }
+      } else {
+        state.editingCell = null;
+      }
+      render();
+      if (moveNext) {
+        requestAnimationFrame(() => {
+          const inp = document.querySelector('.rec-cell-input');
+          if (inp) { inp.focus(); inp.select(); }
+        });
+      }
+    };
+
+    cellInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitCell(false); }
+      else if (e.key === 'Escape') { state.editingCell = null; render(); }
+      else if (e.key === 'Tab') { e.preventDefault(); commitCell(true); }
+    });
+    cellInput.addEventListener('blur', () => {
+      // 약간의 지연으로 다른 셀 클릭과 충돌 방지
+      setTimeout(() => {
+        if (state.editingCell && state.editingCell.recordId === cellInput.dataset.cellRecord && state.editingCell.colKey === cellInput.dataset.cellCol) {
+          commitCell(false);
+        }
+      }, 150);
+    });
+    cellInput.focus();
+    cellInput.select();
+  }
+
+  // 행 삭제
+  document.querySelectorAll('[data-delete-record]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rid = btn.dataset.deleteRecord;
+      const sid = state.selectedSession;
+      if (!sid) return;
+      const session = state.sessions.find(s => s.id === sid);
+      const record = session && session.records ? session.records.find(r => r.id === rid) : null;
+      const name = record ? (record.studentName || '(이름 없음)') : '';
+      if (!confirm(`"${name}" 학생의 기록을 삭제하시겠습니까?`)) return;
+      deleteRecordFromSession(sid, rid);
+      render();
+      showToast('학생 기록이 삭제되었습니다.');
+    });
+  });
+
+  // 정렬 (헤더 클릭)
+  document.querySelectorAll('[data-sort-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sortKey;
+      if (state.recordSort.key === key) {
+        state.recordSort.asc = !state.recordSort.asc;
+      } else {
+        state.recordSort.key = key;
+        state.recordSort.asc = true;
+      }
+      render();
+    });
+  });
+
+  // 검색
+  const recSearch = document.getElementById('rec-search');
+  if (recSearch) {
+    recSearch.addEventListener('input', () => {
+      state.recordFilter.search = recSearch.value;
+      render();
+      // 포커스 복원
+      requestAnimationFrame(() => {
+        const el = document.getElementById('rec-search');
+        if (el) { el.focus(); el.selectionStart = el.selectionEnd = el.value.length; }
+      });
+    });
+  }
+
+  // 학교 필터
+  const schoolFilter = document.getElementById('rec-filter-school');
+  if (schoolFilter) {
+    schoolFilter.addEventListener('change', () => {
+      state.recordFilter.school = schoolFilter.value;
+      render();
+    });
+  }
+
+  // 학년 필터
+  document.querySelectorAll('[data-grade-filter]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const g = parseInt(cb.dataset.gradeFilter);
+      if (cb.checked) {
+        if (!state.recordFilter.grades.includes(g)) state.recordFilter.grades.push(g);
+      } else {
+        state.recordFilter.grades = state.recordFilter.grades.filter(v => v !== g);
+      }
+      render();
+    });
+  });
+
+  // 붙여넣기(Ctrl+V) 일괄 입력
+  const tableWrap = document.getElementById('rec-table-wrap');
+  if (tableWrap) {
+    tableWrap.addEventListener('paste', (e) => {
+      const sid = state.selectedSession;
+      if (!sid) return;
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      if (!text || !text.includes('\t')) return; // 탭 구분자가 없으면 무시
+      e.preventDefault();
+      const lines = text.split('\n').filter(l => l.trim());
+      let addedCount = 0;
+      lines.forEach(line => {
+        const cols = line.split('\t');
+        if (!cols[0] || !cols[0].trim()) return; // 이름 없으면 스킵
+        const rec = createEmptyRecord();
+        RECORD_COLUMNS.forEach((col, i) => {
+          if (i < cols.length && cols[i].trim()) {
+            const val = cols[i].trim();
+            const v = validateCellValue(col.key, val);
+            if (v.valid) rec[col.key] = v.value;
+          }
+        });
+        saveRecordToSession(sid, rec);
+        addedCount++;
+      });
+      if (addedCount > 0) {
+        showToast(`${addedCount}명의 학생 데이터를 붙여넣었습니다.`);
+        render();
+      }
     });
   }
 

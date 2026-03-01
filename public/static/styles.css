@@ -2701,3 +2701,391 @@ body,
 
   .header-sub { top: 56px; }
 }
+
+/* ═══════════════════════════════════════════════ */
+/* ═══ RECORDS TABLE (비공식 기록 표) ═══ */
+/* ═══════════════════════════════════════════════ */
+
+/* 툴바 */
+.rec-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.rec-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 160px;
+  max-width: 280px;
+}
+.rec-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 12px;
+}
+.rec-search-input {
+  width: 100%;
+  padding: 7px 10px 7px 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.rec-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.08);
+}
+.rec-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rec-filter-select {
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-family: var(--font-body);
+  outline: none;
+  cursor: pointer;
+}
+.rec-grade-checks {
+  display: flex;
+  gap: 6px;
+}
+.rec-grade-check {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.rec-grade-check input {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+/* 툴바 버튼 */
+.rec-toolbar-btn {
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.rec-toolbar-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.rec-toolbar-btn-primary {
+  border-color: rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
+}
+.rec-toolbar-btn-primary:hover {
+  background: rgba(var(--accent-rgb), 0.18);
+  border-color: var(--accent);
+}
+
+/* 테이블 래퍼 (가로 스크롤) */
+.rec-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rec-table-wrap::-webkit-scrollbar { height: 6px; }
+.rec-table-wrap::-webkit-scrollbar-track { background: var(--surface); }
+.rec-table-wrap::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+
+/* 테이블 */
+.rec-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-family: var(--font-body);
+}
+
+/* 그룹 헤더 */
+.rec-group-row th {
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  text-align: center;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg-secondary);
+}
+.rec-group-th {
+  border-left: 1px solid var(--border);
+}
+.rec-group-th:first-child { border-left: none; }
+
+/* 컬럼 헤더 */
+.rec-col-row th {
+  background: var(--bg-secondary);
+}
+.rec-th {
+  padding: 8px 6px;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+  user-select: none;
+}
+.rec-th:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.rec-unit {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+/* 번호 열 */
+.rec-th-num, .rec-td-num {
+  width: 36px;
+  min-width: 36px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: var(--font-number);
+}
+
+/* Sticky 열: # (번호) */
+.rec-sticky-num {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--bg-secondary);
+}
+.rec-row .rec-sticky-num {
+  background: var(--card);
+}
+.rec-row:hover .rec-sticky-num {
+  background: var(--card-hover);
+}
+
+/* Sticky 열: 이름 */
+.rec-sticky-name {
+  position: sticky;
+  left: 36px;
+  z-index: 3;
+  background: var(--bg-secondary);
+  box-shadow: 2px 0 4px rgba(0,0,0,0.08);
+}
+.rec-row .rec-sticky-name {
+  background: var(--card);
+  font-weight: 600;
+  color: var(--text);
+}
+.rec-row:hover .rec-sticky-name {
+  background: var(--card-hover);
+}
+
+/* 데이터 행 */
+.rec-row {
+  transition: background 0.12s;
+}
+.rec-row:hover {
+  background: var(--card-hover);
+}
+
+/* 셀 */
+.rec-td {
+  padding: 6px 6px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+  color: var(--text);
+  min-height: 32px;
+}
+.rec-td:hover {
+  background: rgba(var(--accent-rgb), 0.04);
+}
+
+/* 필수 필드 미입력 */
+.rec-td-required {
+  background: rgba(var(--red-rgb), 0.04);
+}
+.rec-td-required:hover {
+  background: rgba(var(--red-rgb), 0.08);
+}
+
+/* 편집 중 셀 */
+.rec-td-editing {
+  padding: 2px;
+  background: rgba(var(--accent-rgb), 0.08) !important;
+}
+.rec-cell-input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font-body);
+  text-align: center;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+.rec-cell-input:focus {
+  border-color: var(--accent);
+}
+.rec-cell-invalid {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 3px rgba(var(--red-rgb), 0.15) !important;
+}
+
+/* 액션 열 */
+.rec-th-action, .rec-td-action {
+  width: 40px;
+  min-width: 40px;
+  text-align: center;
+}
+.rec-delete-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.rec-delete-btn:hover {
+  background: rgba(var(--red-rgb), 0.1);
+  color: var(--red);
+}
+
+/* ═══ 모바일 카드 뷰 ═══ */
+.rec-cards-mobile {
+  display: none;
+  padding: 12px;
+  gap: 12px;
+  flex-direction: column;
+}
+.rec-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.rec-card-header {
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.rec-card-num {
+  font-family: var(--font-number);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.rec-card-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text);
+  flex: 1;
+}
+.rec-card-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.rec-card-section:last-of-type { border-bottom: none; }
+.rec-card-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+.rec-card-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+}
+.rec-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rec-card-label {
+  font-size: 10px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.rec-card-value {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+  font-family: var(--font-number);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+.rec-card-value:hover {
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.rec-card-notes {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+/* 모바일 반응형 */
+@media (max-width: 768px) {
+  .rec-table-wrap { display: none; }
+  .rec-cards-mobile { display: flex; }
+  .rec-toolbar { padding: 10px 12px; gap: 8px; }
+  .rec-search-wrap { max-width: 100%; min-width: 100%; }
+  .rec-filter-group { width: 100%; }
+  .rec-filter-select { flex: 1; }
+}
