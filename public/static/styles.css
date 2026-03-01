@@ -3089,3 +3089,377 @@ body,
   .rec-filter-group { width: 100%; }
   .rec-filter-select { flex: 1; }
 }
+
+/* ═══════════════════════════════════════════════ */
+/* ═══ ROLE SWITCHER (역할 전환) ═══ */
+/* ═══════════════════════════════════════════════ */
+
+.role-switcher {
+  position: relative;
+}
+.role-badge {
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s var(--ease-out);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.role-admin {
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.25);
+}
+.role-admin:hover {
+  background: rgba(var(--accent-rgb), 0.18);
+}
+.role-student {
+  background: rgba(var(--green-rgb), 0.1);
+  color: var(--green);
+  border-color: rgba(var(--green-rgb), 0.25);
+}
+.role-student:hover {
+  background: rgba(var(--green-rgb), 0.18);
+}
+
+.role-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 260px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  display: none;
+  overflow: hidden;
+  animation: modal-slide-up 0.2s var(--ease-out);
+}
+.role-dropdown.open { display: block; }
+.role-dropdown-header {
+  padding: 8px 14px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.role-dropdown-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.role-dropdown-empty {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+.role-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+.role-option:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.role-option.active {
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
+  font-weight: 600;
+}
+.role-option-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ═══ STUDENT VIEW (학생 뷰) ═══ */
+/* ═══════════════════════════════════════════════ */
+
+.student-page {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 24px 0;
+}
+
+.student-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.student-header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.student-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #fff;
+}
+.student-name {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+.student-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.student-empty {
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.student-empty i {
+  font-size: 32px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 12px;
+}
+
+/* 학생 섹션 카드 */
+.student-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+.student-section-readonly {
+  border-left: 3px solid var(--muted);
+}
+.student-section-editable {
+  border-left: 3px solid var(--accent);
+}
+.student-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-heading);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.student-section-icon {
+  font-size: 16px;
+}
+.student-readonly-badge, .student-editable-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+}
+.student-readonly-badge {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.student-editable-badge {
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
+}
+
+/* 읽기 전용 필드 그리드 */
+.student-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  padding: 16px;
+}
+.student-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.student-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.student-field-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-number);
+}
+.student-field-value-lg {
+  font-size: 28px;
+}
+.student-field-unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 2px;
+}
+.student-section-info {
+  padding: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* 모의고사 입력 필드 */
+.student-mock-fields {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.student-mock-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.student-mock-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 110px;
+}
+.student-mock-input-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 200px;
+}
+.student-mock-input {
+  width: 100%;
+  padding: 9px 32px 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.04);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-number);
+  outline: none;
+  transition: all 0.2s;
+}
+.student-mock-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.student-mock-edit-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent);
+  font-size: 11px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.student-mock-actions {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+}
+.student-save-btn {
+  padding: 10px 24px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.3);
+}
+.student-save-btn:hover {
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.4);
+  transform: translateY(-1px);
+}
+
+/* 이전 차시 비교 */
+.student-compare-list {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.student-compare-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.student-compare-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 80px;
+}
+.student-compare-values {
+  font-size: 13px;
+  color: var(--text);
+  font-family: var(--font-number);
+}
+.student-compare-delta {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.student-compare-delta.improved { color: var(--green); }
+.student-compare-delta.declined { color: var(--red); }
+
+/* 반응형 */
+@media (max-width: 768px) {
+  .student-page { padding: 16px 0; }
+  .student-name { font-size: 17px; }
+  .student-fields-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px; }
+  .student-mock-field { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .student-mock-label { min-width: auto; }
+  .student-mock-input-wrap { max-width: 100%; width: 100%; }
+  .role-badge span { display: none; }
+  .role-dropdown { right: -40px; }
+  .student-compare-item { flex-wrap: wrap; }
+}
