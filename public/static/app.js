@@ -233,9 +233,21 @@ function createEmptyRecord() {
   return {
     id: generateRecordId(),
     studentName: '', school: '', grade: null, class: '',
-    gpa: null, mockExamGrade: null, koreanScore: null, mathScore: null, englishGrade: null,
-    sprint100m: null, standingLongJump: null, medicineBall: null, shuttleRun: null, sitUps: null,
-    notes: ''
+    // 수능/모의고사 성적 (학생 입력)
+    korean: { subject: '언매', grade: null, rawScore: null, standardScore: null, percentile: null },
+    math: { subject: '확통', grade: null, rawScore: null, standardScore: null, percentile: null },
+    inquiry1: { subject: '생윤', rawScore: null, standardScore: null, percentile: null },
+    inquiry2: { subject: '윤사', rawScore: null, standardScore: null, percentile: null },
+    englishGrade: null,
+    koreanHistoryGrade: null,
+    // 내신
+    gpa: null,
+    // 실기 기록 (관리자 입력) — SPORTS_FIELDS key 기반
+    sports: {},
+    // 메타
+    notes: '',
+    lastEditedBy: null,
+    lastEditedAt: null
   };
 }
 
@@ -434,8 +446,8 @@ function attemptLogin(loginId, password) {
   return false;
 }
 
-// 학생이 편집 가능한 필드
-const STUDENT_EDITABLE_FIELDS = ['mockExamGrade', 'koreanScore', 'mathScore', 'englishGrade'];
+// 학생이 편집 가능한 필드 (수능/모의고사 성적)
+const STUDENT_EDITABLE_FIELDS = ['korean', 'math', 'inquiry1', 'inquiry2', 'englishGrade', 'koreanHistoryGrade'];
 
 // 현재 로그인한 학생의 현재 세션 기록 찾기
 function getMyRecord(sessionId) {
@@ -1695,7 +1707,7 @@ function renderStudentRecordsPage() {
   const selectedObj = sessions.find(s => s.id === sel);
   const myRecord = selectedObj ? getMyRecord(sel) : null;
   const prevRecord = selectedObj ? getPreviousSessionRecord(sel) : null;
-  const isFirstSession = selectedObj && sessions[sessions.length - 1].id === sel;
+  const isFirstSession = selectedObj && sessions.length > 0 && sessions[sessions.length - 1].id === sel;
 
   return `
   <div class="student-page reveal">
@@ -1722,14 +1734,13 @@ function renderStudentRecordsPage() {
       </div>
     </div>` : ''}
 
-    ${!selectedObj ? `<div class="student-empty"><i class="fas fa-calendar-times"></i> 등록된 차시가 없습니다<div style="font-size:12px;color:var(--muted);margin-top:6px">담당 선생님이 차시를 등록하면 기록이 표시됩니다</div></div>` :
-      `
+    ${!selectedObj ? `<div class="student-empty"><i class="fas fa-calendar-times"></i> 등록된 차시가 없습니다<div style="font-size:12px;color:var(--muted);margin-top:6px">담당 선생님이 차시를 등록하면 기록이 표시됩니다</div></div>` : `
     <div class="student-session-info-bar">
       <i class="fas fa-calendar-alt"></i> 현재 조회 중: <strong>${selectedObj.number}차시</strong> (${formatSessionDate(selectedObj.date)})
     </div>
 
+    ${renderStudentExamSection(myRecord, sel)}
     ${renderStudentSportSection(myRecord, prevRecord, isFirstSession)}
-    ${renderStudentMockExamSection(myRecord, sel, prevRecord)}
     ${renderStudentGpaSection(myRecord, prevRecord, isFirstSession)}
     `}
   </div>`;
@@ -1759,98 +1770,97 @@ function renderStudentReportPage() {
   </div>`;
 }
 
-function renderStudentSportSection(rec, prevRecord, isFirstSession) {
-  const sportCols = RECORD_COLUMNS.filter(c => c.group === 'sport');
-  const directionMap = { sprint100m: 'lower', standingLongJump: 'higher', medicineBall: 'higher', shuttleRun: 'higher', sitUps: 'higher' };
-
-  return `
-  <div class="student-section student-section-readonly">
-    <div class="student-section-header">
-      <span class="student-section-icon" style="color:var(--green)"><i class="fas fa-running"></i></span>
-      <span>실기 기록</span>
-      <span class="student-readonly-badge"><i class="fas fa-lock"></i> 담당 선생님 입력</span>
-    </div>
-    <div class="student-section-desc">담당 선생님이 입력한 기록입니다</div>
-    <div class="student-sport-table">
-      <div class="student-sport-row student-sport-row-header">
-        <span>종목</span><span>기록</span><span>이전 차시 대비</span>
-      </div>
-      ${sportCols.map(col => {
-        const val = rec ? rec[col.key] : null;
-        const display = val !== null && val !== undefined && val !== '' ? `${val}${col.unit || ''}` : '<span class="text-muted">아직 입력되지 않았습니다</span>';
-        let delta = '';
-        if (isFirstSession && val !== null && val !== undefined && val !== '') {
-          delta = '<span class="text-muted">첫 기록입니다</span>';
-        } else if (prevRecord && val !== null && val !== undefined && val !== '') {
-          const prev = prevRecord[col.key];
-          if (prev !== null && prev !== undefined && prev !== '') {
-            const diff = Number(val) - Number(prev);
-            if (diff === 0) {
-              delta = '<span class="text-muted">— 변동 없음</span>';
-            } else {
-              const dir = directionMap[col.key] || 'higher';
-              const improved = (dir === 'higher' && diff > 0) || (dir === 'lower' && diff < 0);
-              const absDiff = Math.abs(diff);
-              const diffStr = absDiff % 1 !== 0 ? absDiff.toFixed(1) : absDiff;
-              delta = `<span class="delta ${improved ? 'delta-up' : 'delta-down'}">${improved ? '▲' : '▼'} ${diffStr}${col.unit || ''} ${improved ? '향상' : '하락'}</span>`;
-            }
-          } else {
-            delta = '<span class="text-muted">—</span>';
-          }
-        } else if (!isFirstSession) {
-          delta = '<span class="text-muted">—</span>';
-        }
-        return `<div class="student-sport-row">
-          <span class="student-sport-name">${col.label}</span>
-          <span class="student-sport-val">${display}</span>
-          <span class="student-sport-delta">${delta}</span>
-        </div>`;
-      }).join('')}
-    </div>
-    <div class="student-section-lock"><i class="fas fa-lock"></i> 수정이 필요하면 담당 선생님께 문의하세요</div>
-  </div>`;
-}
-
-function renderStudentMockExamSection(rec, sessionId, prevRecord) {
-  const fields = [
-    { key: 'mockExamGrade', label: '모의고사 등급', min: 1, max: 9, step: 1, dir: 'lower' },
-    { key: 'koreanScore', label: '국어 원점수', min: 0, max: 100, step: 1, dir: 'higher' },
-    { key: 'mathScore', label: '수학 원점수', min: 0, max: 100, step: 1, dir: 'higher' },
-    { key: 'englishGrade', label: '영어 등급', min: 1, max: 9, step: 1, dir: 'lower' }
-  ];
+// ═══ 학생 뷰 — 수능/모의고사 성적 (2열 카드 레이아웃) ═══
+function renderStudentExamSection(rec, sessionId) {
   const isEditing = state.studentMockEditing || false;
   const recordId = rec ? rec.id : null;
+  const k = rec && rec.korean ? rec.korean : { subject: '언매', grade: null, rawScore: null, standardScore: null, percentile: null };
+  const m = rec && rec.math ? rec.math : { subject: '확통', grade: null, rawScore: null, standardScore: null, percentile: null };
+  const iq1 = rec && rec.inquiry1 ? rec.inquiry1 : { subject: '생윤', rawScore: null, standardScore: null, percentile: null };
+  const iq2 = rec && rec.inquiry2 ? rec.inquiry2 : { subject: '윤사', rawScore: null, standardScore: null, percentile: null };
+  const engGrade = rec ? rec.englishGrade : null;
+  const hisGrade = rec ? rec.koreanHistoryGrade : null;
+
+  const val = (v) => v !== null && v !== undefined ? v : '';
+  const dis = (v) => v !== null && v !== undefined && v !== '' ? v : '<span class="text-muted">-</span>';
+
+  function fieldInput(name, value, opts = {}) {
+    if (!isEditing) return `<div class="stu-exam-val">${dis(value)}</div>`;
+    const min = opts.min !== undefined ? `min="${opts.min}"` : '';
+    const max = opts.max !== undefined ? `max="${opts.max}"` : '';
+    const step = opts.step ? `step="${opts.step}"` : '';
+    const ph = opts.placeholder || '';
+    return `<input type="number" class="stu-exam-input" data-exam-field="${name}" value="${val(value)}" ${min} ${max} ${step} placeholder="${ph}">`;
+  }
+
+  function selectInput(name, options, value) {
+    if (!isEditing) return `<div class="stu-exam-val">${dis(value)}</div>`;
+    return `<select class="stu-exam-select" data-exam-field="${name}">${options.map(o => `<option value="${o}" ${o == value ? 'selected' : ''}>${o}</option>`).join('')}</select>`;
+  }
+
+  function gradeSelect(name, value) {
+    if (!isEditing) return `<div class="stu-exam-val">${value ? value + '등급' : '<span class="text-muted">-</span>'}</div>`;
+    return `<select class="stu-exam-select" data-exam-field="${name}">${[1,2,3,4,5,6,7,8,9].map(g => `<option value="${g}" ${g == value ? 'selected' : ''}>${g}등급</option>`).join('')}</select>`;
+  }
 
   return `
   <div class="student-section student-section-editable">
     <div class="student-section-header">
       <span class="student-section-icon" style="color:var(--accent)"><i class="fas fa-pen-alt"></i></span>
-      <span>모의고사 성적</span>
+      <span>수능 / 모의고사 성적</span>
       ${!isEditing ? `<button class="student-edit-btn" id="btn-mock-edit"><i class="fas fa-edit"></i> 수정</button>` : ''}
     </div>
     <div class="student-section-desc">직접 입력할 수 있습니다</div>
-    <div class="student-mock-fields">
-      ${fields.map(f => {
-        const val = rec ? rec[f.key] : null;
-        const display = val !== null && val !== undefined ? val : '';
-        const prevVal = prevRecord ? prevRecord[f.key] : null;
-        let deltaHtml = '';
-        if (prevVal !== null && prevVal !== undefined && val !== null && val !== undefined && val !== '' && prevVal !== '') {
-          const diff = Number(val) - Number(prevVal);
-          if (diff !== 0) {
-            const improved = (f.dir === 'higher' && diff > 0) || (f.dir === 'lower' && diff < 0);
-            deltaHtml = `<span class="delta-sm ${improved ? 'delta-up' : 'delta-down'}">${improved ? '▲' : '▼'} ${Math.abs(diff)}</span>`;
-          }
-        }
-        return `<div class="student-mock-field">
-          <label class="student-mock-label">${f.label} ${deltaHtml}</label>
-          ${isEditing
-            ? `<input type="number" class="student-mock-input" data-student-field="${f.key}" value="${display}" min="${f.min}" max="${f.max}" step="${f.step}" placeholder="입력">`
-            : `<div class="student-mock-value">${display !== '' ? display : '<span class="text-muted">-</span>'}</div>`
-          }
-        </div>`;
-      }).join('')}
+
+    <div class="stu-exam-grid">
+      <!-- 국어 -->
+      <div class="stu-exam-card" style="border-color: rgba(0,212,255,0.25)">
+        <div class="stu-exam-card-title" style="color:var(--accent)"><i class="fas fa-book"></i> 국어</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">선택과목</span>${selectInput('korean.subject', ['언매', '화작'], k.subject)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">등급</span>${gradeSelect('korean.grade', k.grade)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">원점수</span>${fieldInput('korean.rawScore', k.rawScore, { min: 0, max: 100, placeholder: '0~100' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">표준점수</span>${fieldInput('korean.standardScore', k.standardScore, { placeholder: '표준점수' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">백분위</span>${fieldInput('korean.percentile', k.percentile, { min: 0, max: 100, placeholder: '0~100' })}</div>
+      </div>
+
+      <!-- 수학 -->
+      <div class="stu-exam-card" style="border-color: rgba(167,139,250,0.25)">
+        <div class="stu-exam-card-title" style="color:var(--purple)"><i class="fas fa-calculator"></i> 수학</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">선택과목</span>${selectInput('math.subject', ['확통', '미적분', '기하'], m.subject)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">등급</span>${gradeSelect('math.grade', m.grade)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">원점수</span>${fieldInput('math.rawScore', m.rawScore, { min: 0, max: 100, placeholder: '0~100' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">표준점수</span>${fieldInput('math.standardScore', m.standardScore, { placeholder: '표준점수' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">백분위</span>${fieldInput('math.percentile', m.percentile, { min: 0, max: 100, placeholder: '0~100' })}</div>
+      </div>
+
+      <!-- 탐구 -->
+      <div class="stu-exam-card" style="border-color: rgba(0,230,118,0.25)">
+        <div class="stu-exam-card-title" style="color:var(--green)"><i class="fas fa-flask"></i> 탐구</div>
+        <div class="stu-exam-sub-label">탐구 1</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">선택과목</span>${selectInput('inquiry1.subject', SUBJECTS_INQUIRY, iq1.subject)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">원점수</span>${fieldInput('inquiry1.rawScore', iq1.rawScore, { min: 0, max: 50, placeholder: '0~50' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">표준점수</span>${fieldInput('inquiry1.standardScore', iq1.standardScore, { placeholder: '표준점수' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">백분위</span>${fieldInput('inquiry1.percentile', iq1.percentile, { min: 0, max: 100, placeholder: '0~100' })}</div>
+        <div class="stu-exam-sub-label" style="margin-top:12px">탐구 2</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">선택과목</span>${selectInput('inquiry2.subject', SUBJECTS_INQUIRY, iq2.subject)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">원점수</span>${fieldInput('inquiry2.rawScore', iq2.rawScore, { min: 0, max: 50, placeholder: '0~50' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">표준점수</span>${fieldInput('inquiry2.standardScore', iq2.standardScore, { placeholder: '표준점수' })}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">백분위</span>${fieldInput('inquiry2.percentile', iq2.percentile, { min: 0, max: 100, placeholder: '0~100' })}</div>
+      </div>
+
+      <!-- 영어·한국사 -->
+      <div class="stu-exam-card" style="border-color: rgba(255,214,0,0.25)">
+        <div class="stu-exam-card-title" style="color:var(--yellow)"><i class="fas fa-globe"></i> 영어 · 한국사</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">영어 등급</span>${gradeSelect('englishGrade', engGrade)}</div>
+        <div class="stu-exam-row"><span class="stu-exam-label">한국사 등급</span>${gradeSelect('koreanHistoryGrade', hisGrade)}</div>
+        <div class="stu-exam-info-box">
+          <i class="fas fa-info-circle" style="color:var(--accent);margin-right:4px"></i>
+          영어·한국사는 <strong style="color:var(--yellow)">등급만</strong> 입력하세요.<br>
+          대학별로 감점 또는 등급별 점수가 자동 적용됩니다.
+        </div>
+      </div>
     </div>
+
     ${isEditing ? `
     <div class="student-mock-actions">
       <button class="student-cancel-btn" id="btn-mock-cancel"><i class="fas fa-times"></i> 취소</button>
@@ -1861,6 +1871,79 @@ function renderStudentMockExamSection(rec, sessionId, prevRecord) {
   </div>`;
 }
 
+// ═══ 학생 뷰 — 실기 기록 (슬라이더 바 + 수치, 읽기 전용) ═══
+function renderStudentSportSection(rec, prevRecord, isFirstSession) {
+  const mainSports = SPORTS_FIELDS.slice(0, 10);
+  const extraSports = SPORTS_FIELDS.slice(10);
+  const sports = rec && rec.sports ? rec.sports : {};
+
+  function renderReadonlySlider(f, value, prev) {
+    const hasValue = value !== null && value !== undefined && value !== '' && value !== 0;
+    const decimals = f.step < 1 ? 1 : 0;
+    const displayVal = hasValue ? Number(value).toFixed(decimals) : null;
+    // Calculate position percentage
+    const range = f.max - f.min;
+    const pct = hasValue ? Math.max(0, Math.min(100, ((Number(value) - f.min) / range) * 100)) : 0;
+
+    // Delta from prev
+    let deltaHtml = '';
+    if (hasValue && !isFirstSession && prevRecord && prevRecord.sports) {
+      const prevVal = prevRecord.sports[f.key];
+      if (prevVal !== null && prevVal !== undefined && prevVal !== '' && prevVal !== 0) {
+        const diff = Number(value) - Number(prevVal);
+        if (diff !== 0) {
+          const improved = (f.direction === 'higher' && diff > 0) || (f.direction === 'lower' && diff < 0);
+          const absDiff = Math.abs(diff);
+          const diffStr = absDiff % 1 !== 0 ? absDiff.toFixed(1) : absDiff;
+          deltaHtml = `<span class="delta-sm ${improved ? 'delta-up' : 'delta-down'}">${improved ? '▲' : '▼'}${diffStr}${f.unit}</span>`;
+        }
+      }
+    } else if (hasValue && isFirstSession) {
+      deltaHtml = `<span class="delta-sm text-muted">첫 기록</span>`;
+    }
+
+    return `
+    <div class="stu-slider-item ${!hasValue ? 'stu-slider-empty' : ''}">
+      <div class="stu-slider-header">
+        <div class="stu-slider-label">${f.label}</div>
+        <div class="stu-slider-val-wrap">
+          ${hasValue
+            ? `<span class="stu-slider-value">${displayVal}</span><span class="stu-slider-unit">${f.unit}</span> ${deltaHtml}`
+            : `<span class="text-muted" style="font-size:11px">아직 입력되지 않았습니다</span>`}
+        </div>
+      </div>
+      <div class="stu-slider-track">
+        <div class="stu-slider-fill" style="width:${pct}%"></div>
+        ${hasValue ? `<div class="stu-slider-thumb" style="left:${pct}%"></div>` : ''}
+      </div>
+      <div class="stu-slider-range"><span>${f.min}${f.unit}</span><span>${f.max}${f.unit}</span></div>
+    </div>`;
+  }
+
+  return `
+  <div class="student-section student-section-readonly">
+    <div class="student-section-header">
+      <span class="student-section-icon" style="color:var(--green)"><i class="fas fa-running"></i></span>
+      <span>실기 기록</span>
+      <span class="student-readonly-badge"><i class="fas fa-lock"></i> 담당 선생님 입력</span>
+    </div>
+    <div class="student-section-desc">담당 선생님이 입력한 기록입니다</div>
+    <div class="stu-slider-group">
+      ${mainSports.map(f => renderReadonlySlider(f, sports[f.key], prevRecord)).join('')}
+    </div>
+    <details class="stu-extra-sports">
+      <summary>
+        <i class="fas fa-plus-circle"></i> 추가 종목 (${extraSports.length}개)
+      </summary>
+      <div class="stu-slider-group" style="margin-top:12px">
+        ${extraSports.map(f => renderReadonlySlider(f, sports[f.key], prevRecord)).join('')}
+      </div>
+    </details>
+    <div class="student-section-lock"><i class="fas fa-lock"></i> 수정이 필요하면 담당 선생님께 문의하세요</div>
+  </div>`;
+}
+
+// ═══ 학생 뷰 — 내신 성적 ═══
 function renderStudentGpaSection(rec, prevRecord, isFirstSession) {
   const gpa = rec ? rec.gpa : null;
   const display = gpa !== null && gpa !== undefined && gpa !== '' ? gpa : '-';
@@ -3413,13 +3496,42 @@ function bindEvents() {
         session.records.push(record);
       }
 
+      // 수능 성적 필드 파싱
       let hasError = false;
-      document.querySelectorAll('[data-student-field]').forEach(inp => {
-        const key = inp.dataset.studentField;
-        const v = validateCellValue(key, inp.value);
-        if (!v.valid) { showToast(v.msg); hasError = true; inp.classList.add('input-error'); return; }
-        inp.classList.remove('input-error');
-        record[key] = v.value;
+      if (!record.korean) record.korean = {};
+      if (!record.math) record.math = {};
+      if (!record.inquiry1) record.inquiry1 = {};
+      if (!record.inquiry2) record.inquiry2 = {};
+
+      document.querySelectorAll('[data-exam-field]').forEach(inp => {
+        const path = inp.dataset.examField;
+        const parts = path.split('.');
+        let val = inp.value;
+
+        // select vs number input
+        if (inp.tagName === 'SELECT') {
+          if (parts.length === 2) {
+            if (!record[parts[0]] || typeof record[parts[0]] !== 'object') record[parts[0]] = {};
+            record[parts[0]][parts[1]] = val;
+          } else {
+            record[parts[0]] = val ? Number(val) : null;
+          }
+        } else {
+          const numVal = val === '' ? null : Number(val);
+          if (val !== '' && isNaN(numVal)) {
+            showToast(`잘못된 값이 입력되었습니다: ${path}`);
+            inp.classList.add('input-error');
+            hasError = true;
+            return;
+          }
+          inp.classList.remove('input-error');
+          if (parts.length === 2) {
+            if (!record[parts[0]] || typeof record[parts[0]] !== 'object') record[parts[0]] = {};
+            record[parts[0]][parts[1]] = numVal;
+          } else {
+            record[parts[0]] = numVal;
+          }
+        }
       });
       if (hasError) return;
 
@@ -3427,7 +3539,7 @@ function bindEvents() {
       record.lastEditedAt = new Date().toISOString();
       saveSessions(state.sessions);
       state.studentMockEditing = false;
-      showToast('모의고사 성적이 저장되었습니다.');
+      showToast('수능/모의고사 성적이 저장되었습니다.');
       render();
     });
   }
