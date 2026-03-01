@@ -1531,6 +1531,7 @@ function renderRecordsPage() {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           ${state.sessions.length > 1 && (!selectedObj.records || !selectedObj.records.length) ? `<button class="rec-toolbar-btn" id="btn-copy-prev" title="이전 차시 학생 목록 가져오기"><i class="fas fa-copy"></i> 이전 차시 복사</button>` : ''}
+          <button class="rec-toolbar-btn" id="btn-analyze-all" title="전체 학생 분석"><i class="fas fa-chart-bar"></i> 전체 분석하기</button>
           <button class="rec-toolbar-btn rec-toolbar-btn-primary" id="btn-add-record"><i class="fas fa-plus"></i> 학생 추가</button>
         </div>
       </div>
@@ -1656,6 +1657,10 @@ function renderRecordRow(rec, idx, sessionId) {
         const attrs = col.type === 'number' ? `min="${col.min || ''}" max="${col.max || ''}" step="${col.step || 'any'}"` : '';
         return `<td class="${cellClass} rec-td-editing"><input class="rec-cell-input" type="${inputType}" ${attrs} value="${displayVal}" data-cell-session="${sessionId}" data-cell-record="${rec.id}" data-cell-col="${col.key}" autofocus></td>`;
       }
+      // 이름 열은 Drawer 열기 링크로 표시 (관리자 전용)
+      if (col.key === 'studentName' && displayVal && isAdmin()) {
+        return `<td class="${cellClass}" data-cell-click="${rec.id}|${col.key}"><span class="rec-name-link" data-open-drawer="${rec.id}">${displayVal}</span></td>`;
+      }
       return `<td class="${cellClass}" data-cell-click="${rec.id}|${col.key}">${displayVal}</td>`;
     }).join('')}
     <td class="rec-td-action"><button class="rec-delete-btn" data-delete-record="${rec.id}" title="삭제"><i class="fas fa-trash-alt"></i></button></td>
@@ -1676,7 +1681,7 @@ function renderRecordCard(rec, idx, sessionId) {
   <div class="rec-card" data-record-id="${rec.id}">
     <div class="rec-card-header">
       <span class="rec-card-num">${idx + 1}</span>
-      <span class="rec-card-name">${escapeHtml(rec.studentName || '(이름 없음)')}</span>
+      <span class="rec-card-name" data-open-drawer="${rec.id}">${escapeHtml(rec.studentName || '(이름 없음)')}</span>
       <button class="rec-delete-btn" data-delete-record="${rec.id}" title="삭제"><i class="fas fa-trash-alt"></i></button>
     </div>
     <div class="rec-card-section">
@@ -2868,6 +2873,353 @@ function renderReportTable(rd, month) {
   html += '</tbody></table></div>';
   html += '</div>';
   return html;
+}
+
+// ═══════════════════════════════════════════════════════
+// ═══ Part 5: 관리자 — 전체 분석 + 학생 상세 Drawer ═══
+// ═══════════════════════════════════════════════════════
+
+// ── 전체 분석하기 ──
+async function runBulkAnalysis() {
+  const sid = state.selectedSession;
+  if (!sid) { showToast('차시를 선택해주세요'); return; }
+  const session = state.sessions.find(s => s.id === sid);
+  if (!session || !session.records || !session.records.length) { showToast('학생 데이터가 없습니다'); return; }
+  const univs = state.admin.universities;
+  if (!univs || !univs.length) { showToast('대학 데이터를 불러오는 중입니다'); return; }
+
+  const btn = document.getElementById('btn-analyze-all');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 분석 중...'; }
+
+  // 비동기 느낌을 위해 약간 지연
+  await new Promise(r => setTimeout(r, 300));
+
+  const month = state.selectedExamMonth || '3월';
+  let analyzed = 0;
+  for (const rec of session.records) {
+    if (!rec.studentName) continue;
+    const mockData = loadMockExam(rec.id, sid, month);
+    const studentData = buildStudentFromMockExam(mockData, rec);
+    const result = analyzeUniversitiesForStudent(univs, studentData);
+    // 분석 결과를 캐시 (화면 새로고침 시까지 유지)
+    if (!state._bulkAnalysis) state._bulkAnalysis = {};
+    state._bulkAnalysis[rec.id] = { result, studentData, mockData, timestamp: Date.now() };
+    analyzed++;
+  }
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-chart-bar"></i> 전체 분석하기'; }
+  showToast(`${analyzed}명 분석 완료!`);
+}
+
+// ── Drawer 상태 ──
+let _drawerOpen = false;
+let _drawerStudentId = null;
+
+function openStudentDrawer(recordId) {
+  _drawerStudentId = recordId;
+  _drawerOpen = true;
+  renderStudentDrawer();
+}
+
+function closeStudentDrawer() {
+  const drawer = document.getElementById('admin-drawer');
+  const overlay = document.getElementById('admin-drawer-overlay');
+  if (drawer) drawer.classList.remove('ad-open');
+  if (overlay) overlay.classList.remove('ad-overlay-show');
+  setTimeout(() => {
+    _drawerOpen = false;
+    _drawerStudentId = null;
+    if (drawer) drawer.remove();
+    if (overlay) overlay.remove();
+  }, 320);
+}
+
+function renderStudentDrawer() {
+  // 기존 Drawer 제거
+  const old = document.getElementById('admin-drawer');
+  if (old) old.remove();
+  const oldOv = document.getElementById('admin-drawer-overlay');
+  if (oldOv) oldOv.remove();
+
+  const sid = state.selectedSession;
+  const session = state.sessions.find(s => s.id === sid);
+  if (!session) return;
+  const rec = (session.records || []).find(r => r.id === _drawerStudentId);
+  if (!rec) return;
+
+  const univs = state.admin.universities || [];
+  const month = state.selectedExamMonth || '3월';
+  const mockData = loadMockExam(rec.id, sid, month);
+  const studentData = buildStudentFromMockExam(mockData, rec);
+  const analysis = analyzeUniversitiesForStudent(univs, studentData);
+
+  // 메모 로드
+  const memoKey = 'memo_' + rec.id;
+  const savedMemo = localStorage.getItem(memoKey) || '';
+
+  let html = `
+  <div class="ad-overlay" id="admin-drawer-overlay"></div>
+  <div class="ad-drawer" id="admin-drawer">
+    <div class="ad-header">
+      <div class="ad-header-title"><i class="fas fa-user-circle"></i> 학생 상세</div>
+      <button class="ad-close-btn" id="ad-close"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="ad-body">`;
+
+  // ── (1) 학생 정보 ──
+  html += `
+    <div class="ad-section">
+      <div class="ad-student-info">
+        <div class="ad-student-avatar"><i class="fas fa-user-graduate"></i></div>
+        <div>
+          <div class="ad-student-name">${escapeHtml(rec.studentName || '(이름 없음)')}</div>
+          <div class="ad-student-meta">${escapeHtml(rec.school || '')} ${rec.grade ? rec.grade + '학년' : ''} ${rec.class ? rec.class + '반' : ''}</div>
+        </div>
+      </div>
+    </div>`;
+
+  // ── (2) 차시별 기록 비교 테이블 ──
+  html += renderDrawerComparisonTable(rec);
+
+  // ── (3) 분석 결과 ──
+  html += renderDrawerAnalysis(analysis);
+
+  // ── (4) 상담 메모 ──
+  html += `
+    <div class="ad-section">
+      <div class="ad-section-title"><i class="fas fa-sticky-note"></i> 상담 메모</div>
+      <textarea class="ad-memo" id="ad-memo" placeholder="학생에 대한 상담 메모를 입력하세요...">${escapeHtml(savedMemo)}</textarea>
+      <div class="ad-memo-actions">
+        <button class="ad-memo-save" id="ad-memo-save"><i class="fas fa-save"></i> 메모 저장</button>
+      </div>
+      <div class="ad-memo-privacy"><i class="fas fa-lock"></i> 이 메모는 관리자에게만 보이며, 학생에게 노출되지 않습니다</div>
+    </div>`;
+
+  html += `</div></div>`;
+
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // 애니메이션
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const drawer = document.getElementById('admin-drawer');
+      const overlay = document.getElementById('admin-drawer-overlay');
+      if (drawer) drawer.classList.add('ad-open');
+      if (overlay) overlay.classList.add('ad-overlay-show');
+    });
+  });
+
+  // 이벤트 바인딩
+  bindDrawerEvents();
+}
+
+// ── 차시별 비교 테이블 (Drawer 내) ──
+function renderDrawerComparisonTable(rec) {
+  const sessions = state.sessions.slice().sort((a, b) => a.number - b.number);
+  const month = state.selectedExamMonth || '3월';
+
+  // 각 차시에서 이 학생의 기록 수집
+  const sessionData = [];
+  for (const s of sessions) {
+    const r = (s.records || []).find(rr => rr.id === rec.id || rr.studentName === rec.studentName);
+    const mock = r ? loadMockExam(r.id, s.id, month) : null;
+    sessionData.push({ session: s, record: r, mock });
+  }
+
+  if (sessionData.length === 0) return '';
+
+  let html = `
+  <div class="ad-section">
+    <div class="ad-section-title"><i class="fas fa-table"></i> 차시별 기록 비교</div>
+    <div class="ad-table-wrap">
+      <table class="ad-table">
+        <thead><tr><th class="ad-th-label">항목</th>`;
+  
+  for (const sd of sessionData) {
+    html += `<th>${sd.session.number}차시</th>`;
+  }
+  html += `</tr></thead><tbody>`;
+
+  // 행 생성: 모의고사 + 실기
+  const rows = [];
+
+  // 모의고사 등급
+  rows.push({ label: '국어 등급', lower: true, vals: sessionData.map(sd => {
+    const k = sd.mock && sd.mock.korean ? sd.mock.korean.grade : null;
+    return k && k > 0 ? k : null;
+  })});
+  rows.push({ label: '수학 등급', lower: true, vals: sessionData.map(sd => {
+    const m = sd.mock && sd.mock.math ? sd.mock.math.grade : null;
+    return m && m > 0 ? m : null;
+  })});
+  rows.push({ label: '영어 등급', lower: true, vals: sessionData.map(sd => {
+    const e = sd.mock && sd.mock.english ? sd.mock.english.grade : null;
+    return e && e > 0 ? e : null;
+  })});
+
+  // 실기 종목
+  for (const f of SPORTS_FIELDS.slice(0, 14)) {
+    const vals = sessionData.map(sd => {
+      if (!sd.record || !sd.record.sports) return null;
+      const v = sd.record.sports[f.key];
+      return (v !== null && v !== undefined && v !== '' && v !== 0) ? Number(v) : null;
+    });
+    if (vals.every(v => v === null)) continue;
+    rows.push({ label: f.label, lower: f.direction === 'lower', unit: f.unit, vals });
+  }
+
+  for (const row of rows) {
+    html += `<tr><td class="ad-td-label">${row.label}</td>`;
+    for (let i = 0; i < row.vals.length; i++) {
+      const v = row.vals[i];
+      if (v === null || v === undefined) {
+        html += '<td class="ad-td-empty">-</td>';
+        continue;
+      }
+      let cls = '';
+      let badge = '';
+      if (i > 0) {
+        const prev = row.vals[i - 1];
+        if (prev !== null && prev !== undefined) {
+          const diff = v - prev;
+          if (diff !== 0) {
+            const improved = row.lower ? diff < 0 : diff > 0;
+            cls = improved ? 'ad-td-up' : 'ad-td-down';
+            if (improved && i === row.vals.length - 1) badge = ' <span class="ad-badge-up">✅</span>';
+            if (!improved && i === row.vals.length - 1) badge = ' <span class="ad-badge-down">🔴</span>';
+          }
+        }
+      }
+      const displayVal = typeof v === 'number' && v % 1 !== 0 ? v.toFixed(1) : v;
+      html += `<td class="${cls}">${displayVal}${row.unit ? '<span class="ad-unit">' + row.unit + '</span>' : ''}${badge}</td>`;
+    }
+    html += '</tr>';
+  }
+
+  html += `</tbody></table></div>`;
+  html += `<div class="ad-table-note">* 모의고사 성적은 학생 본인 입력</div>`;
+  html += `</div>`;
+  return html;
+}
+
+// ── 분석 결과 (Drawer 내) ──
+function renderDrawerAnalysis(analysis) {
+  if (!analysis) return '';
+
+  const groups = [
+    { key: 'high', label: '합격 가능성 높음', icon: '🟢', color: '#4ADE80' },
+    { key: 'medium', label: '합격 가능성 보통', icon: '🟡', color: '#FACC15' },
+    { key: 'challenge', label: '도전', icon: '🔴', color: '#F87171' }
+  ];
+
+  const hasAny = groups.some(g => analysis[g.key] && analysis[g.key].length > 0);
+  if (!hasAny) {
+    return `
+    <div class="ad-section">
+      <div class="ad-section-title"><i class="fas fa-chart-pie"></i> 분석 결과</div>
+      <div class="ad-empty">분석 데이터가 부족합니다. 모의고사 및 실기 기록을 확인해주세요.</div>
+    </div>`;
+  }
+
+  let html = `<div class="ad-section">
+    <div class="ad-section-title"><i class="fas fa-chart-pie"></i> 분석 결과</div>`;
+
+  for (const g of groups) {
+    const items = analysis[g.key];
+    if (!items || items.length === 0) continue;
+    
+    // 상위 5개만 표시
+    const top = items.slice(0, 5);
+    
+    html += `<div class="ad-analysis-group">
+      <div class="ad-analysis-group-label" style="color:${g.color}">${g.icon} ${g.label} (${items.length}교)</div>`;
+    
+    for (const u of top) {
+      const diffLabel = u.diffTotal !== null ? (u.diffTotal >= 0 ? '+' + u.diffTotal.toFixed(1) : u.diffTotal.toFixed(1)) : '';
+      html += `
+      <div class="ad-univ-card" data-ad-univ-id="${u.id}">
+        <div class="ad-univ-header">
+          <div class="ad-univ-name">${escapeHtml(u.university)} <span class="ad-univ-dept">${escapeHtml(u.department)}</span></div>
+          ${diffLabel ? `<span class="ad-univ-diff" style="color:${g.color}">${diffLabel}</span>` : ''}
+        </div>
+        <div class="ad-univ-meta">
+          <span>${escapeHtml(u.group || '')}</span>
+          <span>모집 ${u.capacity}명</span>
+          <span>경쟁률 ${u.competition_rate || '-'}</span>
+          <span>수능${Math.round((u.suneung_ratio || 0) * 100)}% + 실기${Math.round((u.sports_ratio || 0) * 100)}%</span>
+        </div>
+        <div class="ad-univ-detail" id="ad-detail-${u.id}" style="display:none">
+          <div class="ad-detail-grid">
+            <div class="ad-detail-item"><span class="ad-detail-label">전형 방법</span><span>${escapeHtml(u.score_method || '-')}</span></div>
+            <div class="ad-detail-item"><span class="ad-detail-label">수능 환산</span><span>${u.suneungScore ? u.suneungScore.toFixed(1) + '점' : '-'}</span></div>
+            <div class="ad-detail-item"><span class="ad-detail-label">실기 추정</span><span>${u.sportsScore ? u.sportsScore.toFixed(1) + '점' : '-'}</span></div>
+            <div class="ad-detail-item"><span class="ad-detail-label">총점 추정</span><span>${u.totalScore ? u.totalScore.toFixed(1) + '점' : '-'}</span></div>
+            <div class="ad-detail-item"><span class="ad-detail-label">합격선(총점)</span><span>${u.cutline_total ? u.cutline_total + '점' : '-'}</span></div>
+            <div class="ad-detail-item"><span class="ad-detail-label">합격선(수능)</span><span>${u.cutline_suneung ? u.cutline_suneung + '점' : '-'}</span></div>
+            ${u.location ? `<div class="ad-detail-item"><span class="ad-detail-label">소재지</span><span>${escapeHtml(u.location)}</span></div>` : ''}
+            ${u.univ_type ? `<div class="ad-detail-item"><span class="ad-detail-label">유형</span><span>${escapeHtml(u.univ_type)}</span></div>` : ''}
+          </div>
+          ${u.sports_events && u.sports_events.length > 0 ? `<div class="ad-detail-sports">실기 종목: ${u.sports_events.map(e => escapeHtml(e)).join(', ')}</div>` : ''}
+        </div>
+      </div>`;
+    }
+    if (items.length > 5) {
+      html += `<div class="ad-more-hint">외 ${items.length - 5}교...</div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+  return html;
+}
+
+// ── Drawer 이벤트 바인딩 ──
+function bindDrawerEvents() {
+  // 닫기 버튼
+  const closeBtn = document.getElementById('ad-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeStudentDrawer);
+
+  // 오버레이 클릭으로 닫기
+  const overlay = document.getElementById('admin-drawer-overlay');
+  if (overlay) overlay.addEventListener('click', closeStudentDrawer);
+
+  // 메모 저장
+  const saveBtn = document.getElementById('ad-memo-save');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const textarea = document.getElementById('ad-memo');
+      if (!textarea || !_drawerStudentId) return;
+      localStorage.setItem('memo_' + _drawerStudentId, textarea.value);
+      showToast('메모가 저장되었습니다');
+    });
+  }
+
+  // 대학 카드 아코디언 토글
+  document.querySelectorAll('.ad-univ-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.ad-univ-detail')) return; // 디테일 내부 클릭은 무시
+      const uid = card.dataset.adUnivId;
+      const detail = document.getElementById('ad-detail-' + uid);
+      if (!detail) return;
+      const isOpen = detail.style.display !== 'none';
+      // 모든 디테일 닫기
+      document.querySelectorAll('.ad-univ-detail').forEach(d => { d.style.display = 'none'; });
+      document.querySelectorAll('.ad-univ-card').forEach(c => c.classList.remove('ad-univ-expanded'));
+      if (!isOpen) {
+        detail.style.display = 'block';
+        card.classList.add('ad-univ-expanded');
+      }
+    });
+  });
+
+  // ESC 키로 닫기
+  const escHandler = (e) => {
+    if (e.key === 'Escape' && _drawerOpen) {
+      closeStudentDrawer();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
 }
 
 // Chart.js 다크 테마 공통 옵션
@@ -5051,6 +5403,21 @@ function bindEvents() {
       }
     });
   }
+
+  // ═══ Part 5: 전체 분석 + Drawer 이벤트 ═══
+  const analyzeBtn = document.getElementById('btn-analyze-all');
+  if (analyzeBtn) {
+    analyzeBtn.addEventListener('click', () => { runBulkAnalysis(); });
+  }
+
+  // 학생 이름 클릭 → Drawer 열기
+  document.querySelectorAll('[data-open-drawer]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation(); // 셀 편집 방지
+      const recordId = el.dataset.openDrawer;
+      openStudentDrawer(recordId);
+    });
+  });
 
   // 셀 클릭 → 인라인 편집
   document.querySelectorAll('[data-cell-click]').forEach(td => {
