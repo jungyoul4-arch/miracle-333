@@ -3331,6 +3331,103 @@ body,
   padding: 24px 0;
 }
 
+/* ═══ 학생 프로필 카드 ═══ */
+.student-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 24px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 24px;
+  box-shadow: var(--glass-highlight), var(--shadow-sm);
+}
+.student-profile-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.3);
+}
+.student-profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.student-profile-name {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+.student-profile-detail {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ═══ 학생 빈 기록 상태 ═══ */
+.student-empty-record {
+  padding: 40px 24px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.student-empty-record i {
+  font-size: 36px;
+  color: var(--muted);
+  margin-bottom: 12px;
+  display: block;
+  opacity: 0.5;
+}
+.student-empty-record-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  font-weight: 400;
+}
+
+/* ═══ 학생 수능 자리표시 카드 ═══ */
+.student-section-placeholder {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  margin-top: 16px;
+}
+.student-exam-placeholder {
+  padding: 48px 24px;
+  text-align: center;
+}
+.student-exam-placeholder-icon {
+  font-size: 36px;
+  color: var(--muted);
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+.student-exam-placeholder-text {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ═══ 학생 차시 카드 (읽기 전용) — 편집/삭제 숨김 ═══ */
+.student-session-card .session-card-actions {
+  display: none !important;
+}
+
 .student-header {
   display: flex;
   align-items: center;

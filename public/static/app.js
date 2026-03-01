@@ -1383,12 +1383,10 @@ function renderStudentNav() {
               <div class="user-profile-detail">${escapeHtml(cu.school || '')} ${cu.grade || ''}학년 ${cu.class ? cu.class + '반' : ''}</div>
             </div>
             <div class="user-profile-divider"></div>
+            <button class="user-profile-option" id="btn-student-info"><i class="fas fa-id-card"></i> 내 정보</button>
             <button class="user-profile-option" id="btn-logout"><i class="fas fa-sign-out-alt"></i> 로그아웃</button>
           </div>
         </div>
-        <button class="theme-toggle" id="btn-theme" title="테마 변경">
-          <i class="fas fa-${getTheme() === 'dark' ? 'sun' : 'moon'}"></i>
-        </button>
       </div>
     </div>
   </div>`;
@@ -1846,22 +1844,22 @@ function renderStudentRecordsPage() {
 
   return `
   <div class="student-page reveal">
-    <div class="student-header">
-      <div class="student-header-info">
-        <div class="student-avatar"><i class="fas fa-user-graduate"></i></div>
-        <div>
-          <div class="student-name">${escapeHtml(cu.studentName || '')}</div>
-          <div class="student-sub">${escapeHtml(cu.school || '')} ${cu.grade || ''}학년 ${cu.class ? cu.class + '반' : ''}</div>
-        </div>
+    <!-- 3-1. 학생 프로필 -->
+    <div class="student-profile-card">
+      <div class="student-profile-avatar"><i class="fas fa-user-graduate"></i></div>
+      <div class="student-profile-info">
+        <div class="student-profile-name">${escapeHtml(cu.studentName || '')}</div>
+        <div class="student-profile-detail">${escapeHtml(cu.school || '')} ${cu.grade || ''}학년 ${cu.class ? cu.class + '반' : ''}</div>
       </div>
     </div>
 
+    <!-- 3-2. 차시 선택 (읽기 전용) -->
     ${sessions.length > 0 ? `
     <div class="student-session-label">차시 선택</div>
     <div class="session-cards-wrap" style="margin-bottom:16px">
       <div class="session-cards">
         ${sessions.map(s => `
-        <div class="session-card ${sel === s.id ? 'selected' : ''}" data-session-id="${s.id}">
+        <div class="session-card student-session-card ${sel === s.id ? 'selected' : ''}" data-session-id="${s.id}">
           <div class="session-card-number">${s.number}차시</div>
           <div class="session-card-date">${formatSessionDate(s.date)}</div>
           ${s.title ? `<div class="session-card-title">${escapeHtml(s.title)}</div>` : ''}
@@ -1869,13 +1867,20 @@ function renderStudentRecordsPage() {
       </div>
     </div>` : ''}
 
-    ${!selectedObj ? `<div class="student-empty"><i class="fas fa-calendar-times"></i> 등록된 차시가 없습니다<div style="font-size:12px;color:var(--muted);margin-top:6px">담당 선생님이 차시를 등록하면 기록이 표시됩니다</div></div>` : `
+    ${!selectedObj ? `
+    <div class="student-empty">
+      <i class="fas fa-calendar-times"></i> 등록된 차시가 없습니다
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">담당 선생님이 차시를 등록하면 기록이 표시됩니다</div>
+    </div>` : `
     <div class="student-session-info-bar">
       <i class="fas fa-calendar-alt"></i> 현재 조회 중: <strong>${selectedObj.number}차시</strong> (${formatSessionDate(selectedObj.date)})
     </div>
 
+    <!-- 3-3. 실기 기록 카드 (읽기 전용) -->
     ${renderStudentSportSection(myRecord, prevRecord, isFirstSession)}
-    ${renderStudentExamSection(myRecord, sel)}
+
+    <!-- 3-4. 수능/모의고사 성적 영역 (Part 2에서 구현) -->
+    ${renderStudentExamPlaceholder()}
     `}
   </div>`;
 }
@@ -1904,7 +1909,22 @@ function renderStudentReportPage() {
   </div>`;
 }
 
-// ═══ 학생 뷰 — 수능/모의고사 성적 (시행월별 분리, 터치 친화적 UI) ═══
+// ═══ 학생 뷰 — 수능/모의고사 자리표시 (Part 2에서 구현) ═══
+function renderStudentExamPlaceholder() {
+  return `
+  <div class="student-section student-section-placeholder">
+    <div class="student-section-header">
+      <span class="student-section-icon" style="color:var(--accent)"><i class="fas fa-pen-alt"></i></span>
+      <span>수능 / 모의고사 성적</span>
+    </div>
+    <div class="student-exam-placeholder">
+      <div class="student-exam-placeholder-icon"><i class="fas fa-clock"></i></div>
+      <div class="student-exam-placeholder-text">이 영역은 곧 추가될 예정입니다.</div>
+    </div>
+  </div>`;
+}
+
+// ═══ 학생 뷰 — 수능/모의고사 성적 (시행월별 분리, 터치 친화적 UI) — Part 2용 보존 ═══
 function renderStudentExamSection(rec, sessionId) {
   const isEditing = state.studentMockEditing || false;
   const recordId = rec ? rec.id : null;
@@ -2049,19 +2069,35 @@ function renderStudentExamSection(rec, sessionId) {
 
 // ═══ 학생 뷰 — 실기 기록 (슬라이더 바 + 수치, 읽기 전용) ═══
 function renderStudentSportSection(rec, prevRecord, isFirstSession) {
+  // 기록이 아예 없는 경우
+  if (!rec) {
+    return `
+    <div class="student-section student-section-readonly">
+      <div class="student-section-header">
+        <span class="student-section-icon" style="color:var(--green)"><i class="fas fa-running"></i></span>
+        <span>실기 기록</span>
+        <span class="student-readonly-badge"><i class="fas fa-lock"></i> 담당 선생님 입력</span>
+      </div>
+      <div class="student-section-desc">담당 선생님이 입력한 기록입니다</div>
+      <div class="student-empty-record">
+        <i class="fas fa-inbox"></i>
+        <div>이 차시에 아직 기록이 없습니다</div>
+        <div class="student-empty-record-sub">담당 선생님이 기록을 입력하면 여기에 표시됩니다</div>
+      </div>
+    </div>`;
+  }
+
   const mainSports = SPORTS_FIELDS.slice(0, 10);
   const extraSports = SPORTS_FIELDS.slice(10);
-  const sports = rec && rec.sports ? rec.sports : {};
+  const sports = rec.sports || {};
 
   function renderReadonlySlider(f, value, prev) {
     const hasValue = value !== null && value !== undefined && value !== '' && value !== 0;
     const decimals = f.step < 1 ? 1 : 0;
     const displayVal = hasValue ? Number(value).toFixed(decimals) : null;
-    // Calculate position percentage
     const range = f.max - f.min;
     const pct = hasValue ? Math.max(0, Math.min(100, ((Number(value) - f.min) / range) * 100)) : 0;
 
-    // Delta from prev
     let deltaHtml = '';
     if (hasValue && !isFirstSession && prevRecord && prevRecord.sports) {
       const prevVal = prevRecord.sports[f.key];
