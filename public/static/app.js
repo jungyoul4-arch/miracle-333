@@ -171,9 +171,38 @@ function getMaxRaw(area, subject) {
   return 50; // 탐구
 }
 
+// ── 차시(Session) 관리 — LocalStorage 영속성 ──
+const SESSION_STORAGE_KEY = 'k1-sessions';
+const SESSION_SELECTED_KEY = 'k1-selected-session';
+
+function loadSessions() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function saveSessions(sessions) {
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(sessions));
+}
+function loadSelectedSession() {
+  return localStorage.getItem(SESSION_SELECTED_KEY) || null;
+}
+function saveSelectedSession(id) {
+  if (id) localStorage.setItem(SESSION_SELECTED_KEY, id);
+  else localStorage.removeItem(SESSION_SELECTED_KEY);
+}
+function generateSessionId() {
+  return 'session-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+}
+function getNextSessionNumber(sessions) {
+  if (!sessions.length) return 1;
+  return Math.max(...sessions.map(s => s.number)) + 1;
+}
+
 // ── 상태 관리 ──
 const state = {
-  tab: 'input', // input, result, detail, admin
+  mainTab: 'records', // records, analysis, report — 최상위 네비게이션
+  tab: 'input', // input, result, detail, admin — 분석 시스템 내부 탭
   student: {
     korean: { subject: '언매', raw: 89, standard: 136, percentile: 97, grade: 2, stdLinked: true },
     math: { subject: '확통', raw: 84, standard: 126, percentile: 89, grade: 2, stdLinked: true },
@@ -198,7 +227,11 @@ const state = {
   // 수능 시뮬레이터 오버라이드 (상세 화면에서 사용)
   simSuneung: null,       // null이면 시뮬레이션 비활성, 객체면 활성
   simBaseScore: null,     // 시뮬레이션 시작 시점의 기준 수능 환산점수
-  simOriginalStudent: null // 시뮬레이션 시작 시점의 원본 학생 데이터
+  simOriginalStudent: null, // 시뮬레이션 시작 시점의 원본 학생 데이터
+  // 차시 관리
+  sessions: loadSessions(),
+  selectedSession: loadSelectedSession(),
+  sessionModal: null // null | 'create' | 'edit'
 };
 
 // ═══ 프론트엔드 입력 검증 ═══
@@ -827,26 +860,76 @@ function render() {
   try {
     const app = document.getElementById('app');
     if (!app) return;
-    app.innerHTML = renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
+
+    // 최상위 네비게이션에 따라 분기
+    if (state.mainTab === 'analysis') {
+      // 기존 분석 시스템 — 그대로 유지
+      app.innerHTML = renderMainNav() + renderHeader() + '<main class="main">' + renderContent() + renderDisclaimer() + '</main>' + renderMobileNav();
+    } else if (state.mainTab === 'report') {
+      app.innerHTML = renderMainNav() + '<main class="main">' + renderReportPage() + '</main>' + renderMobileNavMain();
+    } else {
+      // records (비공식 기록) — 기본 랜딩
+      app.innerHTML = renderMainNav() + '<main class="main">' + renderRecordsPage() + '</main>' + renderMobileNavMain();
+    }
     bindEvents();
-    // 스크롤 리빌 초기화 (약간의 지연으로 DOM 렌더링 보장)
     requestAnimationFrame(() => initScrollReveal());
   } catch (e) {
     console.error('[K1] Render error:', e);
   }
 }
 
-function renderHeader() {
+// ═══ 최상위 메인 네비게이션 ═══
+function renderMainNav() {
   return `
-  <header class="header">
-    <div class="header-inner">
-      <div class="logo">
+  <div class="main-nav-bar">
+    <div class="main-nav-inner">
+      <div class="logo" style="cursor:pointer" id="logo-home">
         <div class="logo-icon">K1</div>
         <div class="logo-text">
           <div class="logo-title">체대입시 분석 시스템</div>
           <div class="logo-sub">K1 SPORTS &middot; 2027학년도 정시</div>
         </div>
       </div>
+      <nav class="main-nav-tabs">
+        <button class="main-nav-btn ${state.mainTab === 'records' ? 'active' : ''}" data-main-tab="records">
+          <i class="fas fa-clipboard-list"></i> <span>비공식 기록</span>
+        </button>
+        <button class="main-nav-btn ${state.mainTab === 'analysis' ? 'active' : ''}" data-main-tab="analysis">
+          <i class="fas fa-chart-bar"></i> <span>분석 시스템</span>
+        </button>
+        <button class="main-nav-btn ${state.mainTab === 'report' ? 'active' : ''}" data-main-tab="report">
+          <i class="fas fa-chart-line"></i> <span>리포트</span>
+        </button>
+      </nav>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="theme-toggle" id="btn-theme" title="테마 변경">
+          <i class="fas fa-${getTheme() === 'dark' ? 'sun' : 'moon'}"></i>
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// 모바일 하단 네비 (비공식 기록/리포트용 — 최상위 탭)
+function renderMobileNavMain() {
+  return `
+  <div class="mobile-nav">
+    <button class="mobile-nav-btn ${state.mainTab === 'records' ? 'active' : ''}" data-main-tab="records">
+      <i class="fas fa-clipboard-list"></i><span>비공식 기록</span>
+    </button>
+    <button class="mobile-nav-btn ${state.mainTab === 'analysis' ? 'active' : ''}" data-main-tab="analysis">
+      <i class="fas fa-chart-bar"></i><span>분석 시스템</span>
+    </button>
+    <button class="mobile-nav-btn ${state.mainTab === 'report' ? 'active' : ''}" data-main-tab="report">
+      <i class="fas fa-chart-line"></i><span>리포트</span>
+    </button>
+  </div>`;
+}
+
+function renderHeader() {
+  return `
+  <header class="header header-sub">
+    <div class="header-inner">
       <nav class="nav">
         <button class="nav-btn ${state.tab === 'input' ? 'active' : ''}" data-tab="input">
           <i class="fas fa-edit"></i> 성적 입력
@@ -861,12 +944,7 @@ function renderHeader() {
           <i class="fas fa-cog"></i> 관리자
         </button>
       </nav>
-      <div style="display:flex;align-items:center;gap:8px">
-        <div class="status-dot"><span>실시간 계산</span></div>
-        <button class="theme-toggle" id="btn-theme" title="테마 변경">
-          <i class="fas fa-${getTheme() === 'dark' ? 'sun' : 'moon'}"></i>
-        </button>
-      </div>
+      <div class="status-dot"><span>실시간 계산</span></div>
     </div>
   </header>`;
 }
@@ -874,6 +952,9 @@ function renderHeader() {
 function renderMobileNav() {
   return `
   <div class="mobile-nav">
+    <button class="mobile-nav-btn" data-main-tab="records">
+      <i class="fas fa-clipboard-list"></i><span>비공식 기록</span>
+    </button>
     <button class="mobile-nav-btn ${state.tab === 'input' ? 'active' : ''}" data-tab="input">
       <i class="fas fa-edit"></i><span>성적입력</span>
     </button>
@@ -886,6 +967,216 @@ function renderMobileNav() {
     <button class="mobile-nav-btn ${state.tab === 'admin' ? 'active' : ''}" data-tab="admin">
       <i class="fas fa-cog"></i><span>관리자</span>
     </button>
+  </div>`;
+}
+
+// ════════════════════════════════════════════
+// ═══ 비공식 기록 페이지 ═══
+// ════════════════════════════════════════════
+function renderRecordsPage() {
+  const sessions = state.sessions.slice().sort((a, b) => b.number - a.number);
+  const sel = state.selectedSession;
+  const selectedObj = sessions.find(s => s.id === sel);
+
+  return `
+  <div class="records-page reveal">
+    <div class="records-header">
+      <div class="records-title">
+        <i class="fas fa-clipboard-list" style="color:var(--accent);margin-right:8px"></i>
+        비공식 기록
+        <span class="records-count">${sessions.length}개 차시</span>
+      </div>
+      <button class="btn-add-session" id="btn-add-session">
+        <i class="fas fa-plus"></i> 새 차시 추가
+      </button>
+    </div>
+
+    ${sessions.length === 0 ? `
+    <div class="session-empty-intro">
+      <div class="session-empty-icon"><i class="fas fa-calendar-plus"></i></div>
+      <div class="session-empty-title">아직 등록된 차시가 없습니다</div>
+      <div class="session-empty-desc">시험 또는 체력측정 일정을 차시로 등록하고<br>학생별 성적과 기록을 관리해보세요</div>
+      <button class="btn-add-session-lg" id="btn-add-session-lg">
+        <i class="fas fa-plus-circle"></i> 첫 번째 차시 추가하기
+      </button>
+    </div>` : `
+    <div class="session-cards-wrap">
+      <div class="session-cards">
+        ${sessions.map(s => `
+        <div class="session-card ${sel === s.id ? 'selected' : ''}" data-session-id="${s.id}">
+          <div class="session-card-number">${s.number}차시</div>
+          <div class="session-card-date">${formatSessionDate(s.date)}</div>
+          <div class="session-card-title">${escapeHtml(s.title || '')}</div>
+          <div class="session-card-actions">
+            <button class="session-action-btn" data-session-edit="${s.id}" title="수정">
+              <i class="fas fa-pen"></i>
+            </button>
+            <button class="session-action-btn session-action-delete" data-session-delete="${s.id}" title="삭제">
+              <i class="fas fa-trash-alt"></i>
+            </button>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="session-content-area">
+      ${selectedObj ? `
+      <div class="session-content-header">
+        <span class="session-content-badge">${selectedObj.number}차시</span>
+        <span class="session-content-date">${formatSessionDate(selectedObj.date)}</span>
+        ${selectedObj.title ? `<span class="session-content-title-text">&mdash; ${escapeHtml(selectedObj.title)}</span>` : ''}
+      </div>
+      <div class="session-content-body">
+        <div class="session-no-records">
+          <i class="fas fa-inbox" style="font-size:32px;color:var(--muted);margin-bottom:12px"></i>
+          <div>이 차시에 아직 기록이 없습니다</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">2단계에서 학생 기록 표가 추가됩니다</div>
+        </div>
+      </div>` : `
+      <div class="session-content-body">
+        <div class="session-no-records">
+          <i class="fas fa-hand-pointer" style="font-size:32px;color:var(--muted);margin-bottom:12px"></i>
+          <div>차시를 선택해주세요</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">위 목록에서 차시를 클릭하면 기록을 확인할 수 있습니다</div>
+        </div>
+      </div>`}
+    </div>`}
+
+    ${renderSessionModal()}
+  </div>`;
+}
+
+function formatSessionDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+  const wd = weekdays[d.getDay()];
+  return `${m}/${day} (${wd})`;
+}
+
+function renderSessionModal() {
+  if (!state.sessionModal) return '';
+  const isEdit = state.sessionModal === 'edit';
+  const editing = isEdit ? state.sessions.find(s => s.id === state.editingSessionId) : null;
+  const defaultNum = isEdit ? (editing ? editing.number : 1) : getNextSessionNumber(state.sessions);
+  const defaultDate = isEdit ? (editing ? editing.date : '') : new Date().toISOString().split('T')[0];
+  const defaultTitle = isEdit ? (editing ? editing.title : '') : '';
+  const defaultDesc = isEdit ? (editing ? editing.description : '') : '';
+
+  return `
+  <div class="modal-overlay" id="session-modal-overlay">
+    <div class="session-modal">
+      <div class="session-modal-header">
+        <span><i class="fas fa-${isEdit ? 'pen' : 'plus-circle'}" style="margin-right:8px"></i>${isEdit ? '차시 수정' : '새 차시 추가'}</span>
+        <button class="session-modal-close" id="btn-session-modal-close"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="session-modal-body">
+        <label class="session-form-label">차시 번호</label>
+        <input type="number" class="session-form-input" id="session-number" value="${defaultNum}" min="1" step="1">
+        <label class="session-form-label">날짜 <span style="color:var(--red)">*</span></label>
+        <input type="date" class="session-form-input" id="session-date" value="${defaultDate}" required>
+        <label class="session-form-label">제목 (선택)</label>
+        <input type="text" class="session-form-input" id="session-title" value="${escapeHtml(defaultTitle)}" placeholder="예: 3월 체력측정, 1학기 모의고사">
+        <label class="session-form-label">설명 (선택)</label>
+        <textarea class="session-form-input session-form-textarea" id="session-desc" placeholder="메모를 남겨보세요">${escapeHtml(defaultDesc)}</textarea>
+      </div>
+      <div class="session-modal-footer">
+        <button class="session-modal-btn cancel" id="btn-session-cancel">취소</button>
+        <button class="session-modal-btn confirm" id="btn-session-confirm">
+          <i class="fas fa-check"></i> ${isEdit ? '수정 완료' : '추가'}
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ═══ 차시 CRUD 핸들러 ═══
+function handleSessionCreate() {
+  const num = parseInt(document.getElementById('session-number').value) || 1;
+  const date = document.getElementById('session-date').value;
+  const title = document.getElementById('session-title').value.trim();
+  const desc = document.getElementById('session-desc').value.trim();
+
+  if (!date) { showToast('날짜를 입력해주세요.'); return; }
+  if (state.sessions.some(s => s.number === num)) { showToast('동일한 차시 번호가 이미 존재합니다.'); return; }
+
+  const newSession = {
+    id: generateSessionId(),
+    number: num,
+    date: date,
+    title: title,
+    description: desc,
+    createdAt: new Date().toISOString(),
+    records: []
+  };
+  state.sessions.push(newSession);
+  saveSessions(state.sessions);
+  state.selectedSession = newSession.id;
+  saveSelectedSession(newSession.id);
+  state.sessionModal = null;
+  showToast(`${num}차시가 추가되었습니다.`);
+  render();
+}
+
+function handleSessionUpdate() {
+  const id = state.editingSessionId;
+  const session = state.sessions.find(s => s.id === id);
+  if (!session) return;
+
+  const num = parseInt(document.getElementById('session-number').value) || 1;
+  const date = document.getElementById('session-date').value;
+  const title = document.getElementById('session-title').value.trim();
+  const desc = document.getElementById('session-desc').value.trim();
+
+  if (!date) { showToast('날짜를 입력해주세요.'); return; }
+  if (state.sessions.some(s => s.number === num && s.id !== id)) { showToast('동일한 차시 번호가 이미 존재합니다.'); return; }
+
+  session.number = num;
+  session.date = date;
+  session.title = title;
+  session.description = desc;
+  saveSessions(state.sessions);
+  state.sessionModal = null;
+  state.editingSessionId = null;
+  showToast(`${num}차시가 수정되었습니다.`);
+  render();
+}
+
+function handleSessionDelete(id) {
+  const session = state.sessions.find(s => s.id === id);
+  if (!session) return;
+  if (!confirm(`[${session.number}차시] "${session.title || formatSessionDate(session.date)}"\n\n이 차시와 관련된 모든 기록이 삭제됩니다.\n계속하시겠습니까?`)) return;
+
+  state.sessions = state.sessions.filter(s => s.id !== id);
+  saveSessions(state.sessions);
+  if (state.selectedSession === id) {
+    state.selectedSession = state.sessions.length ? state.sessions[state.sessions.length - 1].id : null;
+    saveSelectedSession(state.selectedSession);
+  }
+  showToast(`${session.number}차시가 삭제되었습니다.`);
+  render();
+}
+
+// ════════════════════════════════════════════
+// ═══ 리포트 페이지 (준비 중) ═══
+// ════════════════════════════════════════════
+function renderReportPage() {
+  return `
+  <div class="report-page reveal">
+    <div class="empty-state" style="padding:80px 24px">
+      <div class="empty-state-icon"><i class="fas fa-chart-line"></i></div>
+      <div class="empty-state-title">리포트 준비 중</div>
+      <div class="empty-state-desc">
+        추이 그래프와 항목별 리포트 기능이<br>4단계에서 추가될 예정입니다
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap">
+        <div class="report-preview-chip"><i class="fas fa-chart-area"></i> 성적 추이</div>
+        <div class="report-preview-chip"><i class="fas fa-running"></i> 실기 변화</div>
+        <div class="report-preview-chip"><i class="fas fa-trophy"></i> 합격 예측</div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -2327,7 +2618,81 @@ function bindSimBarEvents() {
 // ═══ 이벤트 바인딩 ═══
 // ════════════════════════════════════════════
 function bindEvents() {
-  // 탭 전환
+  // 최상위 메인 탭 전환
+  document.querySelectorAll('[data-main-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.mainTab = btn.dataset.mainTab;
+      localStorage.setItem('k1-main-tab', state.mainTab);
+      render();
+    });
+  });
+
+  // 로고 클릭 → 기본 랜딩(비공식 기록)으로
+  const logoHome = document.getElementById('logo-home');
+  if (logoHome) {
+    logoHome.addEventListener('click', () => {
+      state.mainTab = 'records';
+      localStorage.setItem('k1-main-tab', 'records');
+      render();
+    });
+  }
+
+  // ── 차시 관리 이벤트 ──
+  // 새 차시 추가 버튼
+  const addBtn = document.getElementById('btn-add-session');
+  if (addBtn) addBtn.addEventListener('click', () => { state.sessionModal = 'create'; render(); });
+  const addBtnLg = document.getElementById('btn-add-session-lg');
+  if (addBtnLg) addBtnLg.addEventListener('click', () => { state.sessionModal = 'create'; render(); });
+
+  // 차시 카드 클릭 (선택)
+  document.querySelectorAll('[data-session-id]').forEach(card => {
+    card.addEventListener('click', (e) => {
+      // 편집/삭제 버튼 클릭이면 무시
+      if (e.target.closest('[data-session-edit]') || e.target.closest('[data-session-delete]')) return;
+      state.selectedSession = card.dataset.sessionId;
+      saveSelectedSession(state.selectedSession);
+      render();
+    });
+  });
+
+  // 차시 편집 버튼
+  document.querySelectorAll('[data-session-edit]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.editingSessionId = btn.dataset.sessionEdit;
+      state.sessionModal = 'edit';
+      render();
+    });
+  });
+
+  // 차시 삭제 버튼
+  document.querySelectorAll('[data-session-delete]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleSessionDelete(btn.dataset.sessionDelete);
+    });
+  });
+
+  // 모달 이벤트
+  const modalOverlay = document.getElementById('session-modal-overlay');
+  if (modalOverlay) {
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) { state.sessionModal = null; state.editingSessionId = null; render(); }
+    });
+  }
+  const modalClose = document.getElementById('btn-session-modal-close');
+  if (modalClose) modalClose.addEventListener('click', () => { state.sessionModal = null; state.editingSessionId = null; render(); });
+  const modalCancel = document.getElementById('btn-session-cancel');
+  if (modalCancel) modalCancel.addEventListener('click', () => { state.sessionModal = null; state.editingSessionId = null; render(); });
+  const modalConfirm = document.getElementById('btn-session-confirm');
+  if (modalConfirm) {
+    modalConfirm.addEventListener('click', () => {
+      if (state.sessionModal === 'edit') handleSessionUpdate();
+      else handleSessionCreate();
+    });
+  }
+
+  // 분석 시스템 탭 전환 (기존)
   document.querySelectorAll('[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
@@ -2818,5 +3183,10 @@ function bindEvents() {
 document.addEventListener('DOMContentLoaded', () => {
   // 테마 초기화
   setTheme(getTheme());
+  // 메인 탭 복원
+  const savedMainTab = localStorage.getItem('k1-main-tab');
+  if (savedMainTab && ['records', 'analysis', 'report'].includes(savedMainTab)) {
+    state.mainTab = savedMainTab;
+  }
   render();
 });
