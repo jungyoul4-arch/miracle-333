@@ -1885,14 +1885,546 @@ function renderStudentRecordsPage() {
   </div>`;
 }
 
-// 학생 앱 — 준비 중 페이지 (나의 분석 결과)
+// ═══════════════════════════════════════════════════════
+// ═══ 학생 앱 — 나의 분석 결과 (대학 합격 가능성 분석) ═══
+// ═══════════════════════════════════════════════════════
+
+// 분석 페이지 상태 (글로벌 state에 추가하지 않고 모듈 레벨 변수 사용)
+let _analysisState = {
+  universities: null,   // 캐시된 대학 목록 (API에서 가져옴)
+  loading: false,
+  error: null,
+  expandedUnivId: null, // 아코디언에서 열린 대학 ID
+  conditionSheet: false // 조건 변경 바텀시트 상태
+};
+
+// 학생 모의고사 데이터를 calcSuneungLocal 형식으로 변환
+function buildStudentFromMockExam(mockData, record) {
+  const d = mockData || getEmptyMockExam();
+  const k = d.korean || {};
+  const m = d.math || {};
+  const iq = d.inquiry || {};
+  const iq1 = iq.inquiry1 || {};
+  const iq2 = iq.inquiry2 || {};
+  const eng = d.english || {};
+  const hks = d.koreanHistory || {};
+
+  // 실기 기록은 세션 record에서
+  const sports = {};
+  if (record && record.sports) {
+    Object.assign(sports, record.sports);
+  }
+  // SPORTS_FIELDS에서도 수집
+  if (record) {
+    for (const f of SPORTS_FIELDS) {
+      if (record[f.key] !== undefined && record[f.key] !== null && record[f.key] !== '') {
+        sports[f.key] = Number(record[f.key]);
+      }
+    }
+  }
+
+  return {
+    korean: { subject: k.subject || '화작', raw: k.rawScore || 0, standard: k.standardScore || 0, percentile: k.percentile || 0, grade: k.grade || 0 },
+    math: { subject: m.subject || '확통', raw: m.rawScore || 0, standard: m.standardScore || 0, percentile: m.percentile || 0, grade: m.grade || 0 },
+    english: { grade: eng.grade || 0 },
+    inquiry1: { subject: iq1.subject || '', raw: iq1.rawScore || 0, standard: iq1.standardScore || 0, percentile: iq1.percentile || 0, grade: 0 },
+    inquiry2: { subject: iq2.subject || '', raw: iq2.rawScore || 0, standard: iq2.standardScore || 0, percentile: iq2.percentile || 0, grade: 0 },
+    hanksa: { grade: hks.grade || 0 },
+    sports
+  };
+}
+
+// 데이터 완성도 검사
+function checkDataCompleteness(studentData, mockData) {
+  const missing = [];
+  if (!mockData) {
+    missing.push({ area: '수능/모의고사', desc: '시험 성적이 입력되지 않았습니다' });
+    return missing;
+  }
+  const k = mockData.korean || {};
+  const m = mockData.math || {};
+  const eng = mockData.english || {};
+  if (!k.grade && !k.standardScore) missing.push({ area: '국어', desc: '국어 성적 미입력' });
+  if (!m.grade && !m.standardScore) missing.push({ area: '수학', desc: '수학 성적 미입력' });
+  if (!eng.grade) missing.push({ area: '영어', desc: '영어 등급 미입력' });
+  const iq = mockData.inquiry || {};
+  if (!iq.inquiry1 || (!iq.inquiry1.standardScore && !iq.inquiry1.percentile)) missing.push({ area: '탐구1', desc: '탐구1 성적 미입력' });
+  if (!iq.inquiry2 || (!iq.inquiry2.standardScore && !iq.inquiry2.percentile)) missing.push({ area: '탐구2', desc: '탐구2 성적 미입력' });
+  const sportsKeys = Object.keys(studentData.sports || {}).filter(k => studentData.sports[k] > 0);
+  if (sportsKeys.length === 0) missing.push({ area: '실기', desc: '실기 기록이 없습니다' });
+  return missing;
+}
+
+// 대학별 분석 결과 계산
+function analyzeUniversitiesForStudent(universities, studentData) {
+  if (!universities || !universities.length) return { high: [], medium: [], challenge: [], noData: [] };
+
+  const results = [];
+  for (const univ of universities) {
+    const suneungScore = calcSuneungLocal(studentData, univ);
+    const cutlineSuneung = univ.cutline_suneung || 0;
+    const cutlineTotal = univ.cutline_total || 0;
+
+    // 실기 추정 — 학생 실기 데이터를 simSports 대신 직접 계산
+    let sportsScore = 0;
+    let sportsRatio = 0;
+    const sportsTotal = univ.sports_total || 0;
+    const perEvent = [];
+
+    if (univ.sports_events && univ.sports_events.length > 0 && sportsTotal > 0) {
+      let totalR = 0, validCnt = 0;
+      for (const eventName of univ.sports_events) {
+        const field = findSportsField(eventName);
+        const val = studentData.sports[eventName] || studentData.sports[field.key] || 0;
+        let ratio = 0;
+        if (val > 0 && field.unit !== '-') {
+          if (field.unit === '점' && field.max > 0) {
+            ratio = Math.min(val / field.max, 1);
+          } else {
+            const range = field.max - field.min;
+            if (range > 0) {
+              ratio = field.direction === 'lower'
+                ? Math.max(0, Math.min(1, (field.max - val) / range))
+                : Math.max(0, Math.min(1, (val - field.min) / range));
+            }
+          }
+          totalR += ratio;
+          validCnt++;
+        }
+        perEvent.push({ event: eventName, val, ratio, field });
+      }
+      sportsRatio = validCnt > 0 ? totalR / validCnt : 0;
+      sportsScore = Math.round(sportsRatio * sportsTotal * 10) / 10;
+    }
+
+    const totalScore = suneungScore + sportsScore;
+    const diffSuneung = cutlineSuneung > 0 ? Math.round((suneungScore - cutlineSuneung) * 100) / 100 : null;
+    const diffTotal = cutlineTotal > 0 ? Math.round((totalScore - cutlineTotal) * 10) / 10 : null;
+
+    // 합격 가능성 분류 — 총점 기반 (총 커트라인 있으면), 아니면 수능 커트라인
+    let likelihood = 'noData';
+    const refDiff = diffTotal !== null ? diffTotal : diffSuneung;
+    if (refDiff !== null) {
+      if (refDiff >= 10) likelihood = 'high';
+      else if (refDiff >= -5) likelihood = 'medium';
+      else likelihood = 'challenge';
+    }
+
+    // 조언 생성
+    const advice = generateCutlineAdvice(univ);
+
+    results.push({
+      ...univ,
+      suneungScore,
+      sportsScore,
+      sportsRatio,
+      totalScore,
+      cutlineSuneung,
+      cutlineTotal,
+      diffSuneung,
+      diffTotal,
+      likelihood,
+      perEvent,
+      advice
+    });
+  }
+
+  // 그룹 분류
+  const high = results.filter(r => r.likelihood === 'high').sort((a, b) => (b.diffTotal || b.diffSuneung || 0) - (a.diffTotal || a.diffSuneung || 0));
+  const medium = results.filter(r => r.likelihood === 'medium').sort((a, b) => (b.diffTotal || b.diffSuneung || 0) - (a.diffTotal || a.diffSuneung || 0));
+  const challenge = results.filter(r => r.likelihood === 'challenge').sort((a, b) => (b.diffTotal || b.diffSuneung || 0) - (a.diffTotal || a.diffSuneung || 0));
+  const noData = results.filter(r => r.likelihood === 'noData');
+
+  return { high, medium, challenge, noData, all: results };
+}
+
+// 조건 설명 텍스트 생성
+function getAnalysisConditionText(sessionObj, month) {
+  const sessionText = sessionObj ? `${sessionObj.number}차시 (${formatSessionDate(sessionObj.date)})` : '미선택';
+  const monthText = month || '미선택';
+  return `${sessionText} · ${monthText} 모의고사`;
+}
+
+// 점수 표시 헬퍼
+function displayScore(val, suffix) {
+  if (val === null || val === undefined || val === 0) return '<span class="sa-missing">미입력</span>';
+  return `<span class="sa-score-val">${val}${suffix || ''}</span>`;
+}
+
 function renderStudentAnalysisPage() {
+  const cu = state.currentUser;
+  if (!cu || !cu.studentId) return '<div class="student-page reveal"><div class="empty-state" style="padding:80px 24px"><div class="empty-state-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="empty-state-title">로그인이 필요합니다</div></div></div>';
+
+  const sessions = state.sessions.slice().sort((a, b) => b.number - a.number);
+  const sel = state.selectedSession || (sessions.length ? sessions[0].id : null);
+  const selectedObj = sessions.find(s => s.id === sel);
+  const month = state.selectedExamMonth || '3월';
+  const myRecord = selectedObj ? getMyRecord(sel) : null;
+  const mockData = selectedObj ? loadMockExam(cu.studentId, sel, month) : null;
+  const studentData = buildStudentFromMockExam(mockData, myRecord);
+  const missingData = checkDataCompleteness(studentData, mockData);
+
+  // 대학 목록 — 캐시 또는 로딩 필요
+  const univs = _analysisState.universities;
+  const isLoading = _analysisState.loading;
+
+  // 분석 결과 계산
+  let analysis = null;
+  if (univs && univs.length > 0 && mockData) {
+    // 임시로 state.student를 학생 데이터로 설정 (generateCutlineAdvice가 state.student를 사용)
+    const origStudent = state.student;
+    const origSimSuneung = state.simSuneung;
+    const origSimSports = state.simSports;
+    state.student = studentData;
+    state.simSuneung = null;
+    state.simSports = studentData.sports;
+    analysis = analyzeUniversitiesForStudent(univs, studentData);
+    state.student = origStudent;
+    state.simSuneung = origSimSuneung;
+    state.simSports = origSimSports;
+  }
+
+  // ── HTML 생성 ──
+  let html = '<div class="student-page sa-page reveal">';
+
+  // 1) 헤더
+  html += `
+  <div class="sa-header">
+    <div class="sa-header-title"><i class="fas fa-chart-bar"></i> 나의 분석 결과</div>
+    <div class="sa-header-user">${escapeHtml(cu.studentName || cu.name || '')}</div>
+    <div class="sa-header-condition">
+      <span class="sa-condition-text">기준: ${getAnalysisConditionText(selectedObj, month)}</span>
+      <button class="sa-condition-btn" id="btn-analysis-condition"><i class="fas fa-sliders-h"></i> 다른 조건</button>
+    </div>
+  </div>`;
+
+  // 2) 데이터 누락 경고
+  if (missingData.length > 0) {
+    html += `
+    <div class="sa-warning-block">
+      <div class="sa-warning-icon"><i class="fas fa-exclamation-triangle"></i></div>
+      <div class="sa-warning-content">
+        <div class="sa-warning-title">분석에 필요한 데이터가 부족합니다</div>
+        <div class="sa-warning-list">${missingData.map(m => `<span class="sa-warning-tag"><i class="fas fa-times-circle"></i> ${m.area}: ${m.desc}</span>`).join('')}</div>
+        <button class="sa-warning-link" id="btn-goto-records"><i class="fas fa-arrow-right"></i> 나의 기록으로 이동</button>
+      </div>
+    </div>`;
+  }
+
+  // 3) 현재 점수 요약 카드
+  html += `
+  <div class="sa-summary-card">
+    <div class="sa-summary-title"><i class="fas fa-clipboard-list"></i> 현재 점수 요약</div>
+    <div class="sa-summary-grid">
+      <div class="sa-summary-item">
+        <div class="sa-summary-label">국어</div>
+        <div class="sa-summary-value">${mockData && mockData.korean && mockData.korean.grade ? mockData.korean.grade + '등급' : '<span class="sa-missing">미입력</span>'}</div>
+        <div class="sa-summary-sub">${mockData && mockData.korean && mockData.korean.standardScore ? '표준 ' + mockData.korean.standardScore : ''}</div>
+      </div>
+      <div class="sa-summary-item">
+        <div class="sa-summary-label">수학</div>
+        <div class="sa-summary-value">${mockData && mockData.math && mockData.math.grade ? mockData.math.grade + '등급' : '<span class="sa-missing">미입력</span>'}</div>
+        <div class="sa-summary-sub">${mockData && mockData.math && mockData.math.standardScore ? '표준 ' + mockData.math.standardScore : ''}</div>
+      </div>
+      <div class="sa-summary-item">
+        <div class="sa-summary-label">영어</div>
+        <div class="sa-summary-value">${mockData && mockData.english && mockData.english.grade ? mockData.english.grade + '등급' : '<span class="sa-missing">미입력</span>'}</div>
+      </div>
+      <div class="sa-summary-item">
+        <div class="sa-summary-label">한국사</div>
+        <div class="sa-summary-value">${mockData && mockData.koreanHistory && mockData.koreanHistory.grade ? mockData.koreanHistory.grade + '등급' : '<span class="sa-missing">미입력</span>'}</div>
+      </div>
+      <div class="sa-summary-item sa-summary-item-wide">
+        <div class="sa-summary-label">탐구</div>
+        <div class="sa-summary-value sa-summary-inq">${(() => {
+          const iq = mockData && mockData.inquiry || {};
+          const i1 = iq.inquiry1 || {};
+          const i2 = iq.inquiry2 || {};
+          const i1t = i1.subject ? (getInquiryLabel(i1.subject) || i1.subject) : '탐구1';
+          const i2t = i2.subject ? (getInquiryLabel(i2.subject) || i2.subject) : '탐구2';
+          const i1v = i1.percentile ? i1.percentile + '%' : (i1.standardScore ? '표준' + i1.standardScore : '<span class="sa-missing">미입력</span>');
+          const i2v = i2.percentile ? i2.percentile + '%' : (i2.standardScore ? '표준' + i2.standardScore : '<span class="sa-missing">미입력</span>');
+          return `<span>${i1t} ${i1v}</span><span class="sa-divider">|</span><span>${i2t} ${i2v}</span>`;
+        })()}</div>
+      </div>
+      <div class="sa-summary-item sa-summary-item-wide">
+        <div class="sa-summary-label">실기 요약</div>
+        <div class="sa-summary-value">${(() => {
+          const sportsKeys = Object.keys(studentData.sports).filter(k => studentData.sports[k] > 0);
+          if (sportsKeys.length === 0) return '<span class="sa-missing">기록 없음</span>';
+          return `<span class="sa-sports-badge">${sportsKeys.length}개 종목 입력됨</span>`;
+        })()}</div>
+      </div>
+    </div>
+  </div>`;
+
+  // 4) 대학 분석 목록
+  if (isLoading) {
+    html += `
+    <div class="sa-loading">
+      <div class="sa-loading-spinner"></div>
+      <div>230+ 대학 분석 중...</div>
+    </div>`;
+  } else if (!univs) {
+    html += `
+    <div class="sa-loading">
+      <div class="sa-loading-spinner"></div>
+      <div>대학 데이터 불러오는 중...</div>
+    </div>`;
+  } else if (!mockData) {
+    html += `
+    <div class="sa-empty-analysis">
+      <i class="fas fa-edit"></i>
+      <div>시험 성적을 먼저 입력해주세요</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">나의 기록 탭에서 수능/모의고사 성적을 입력하면<br>대학별 합격 가능성 분석이 시작됩니다</div>
+      <button class="sa-warning-link" id="btn-goto-records-2" style="margin-top:12px"><i class="fas fa-arrow-right"></i> 성적 입력하러 가기</button>
+    </div>`;
+  } else if (analysis) {
+    const { high, medium, challenge, noData } = analysis;
+
+    // 통계 바
+    html += `
+    <div class="sa-stats-bar">
+      <div class="sa-stat-chip sa-stat-high"><span class="sa-stat-dot" style="background:#4ADE80"></span> 안정 ${high.length}개</div>
+      <div class="sa-stat-chip sa-stat-medium"><span class="sa-stat-dot" style="background:#FACC15"></span> 소신 ${medium.length}개</div>
+      <div class="sa-stat-chip sa-stat-challenge"><span class="sa-stat-dot" style="background:#F87171"></span> 도전 ${challenge.length}개</div>
+      <div class="sa-stat-chip sa-stat-nodata"><span class="sa-stat-dot" style="background:var(--muted)"></span> 데이터없음 ${noData.length}개</div>
+    </div>`;
+
+    // 각 그룹 렌더링 함수
+    function renderUnivGroup(title, color, icon, items) {
+      if (!items || items.length === 0) return '';
+      let g = `<div class="sa-group">
+        <div class="sa-group-header" style="--group-color:${color}">
+          <span class="sa-group-icon" style="color:${color}"><i class="fas ${icon}"></i></span>
+          <span class="sa-group-title">${title}</span>
+          <span class="sa-group-count">${items.length}개교</span>
+        </div>`;
+
+      for (const u of items) {
+        const expanded = _analysisState.expandedUnivId === u.id;
+        const refDiff = u.diffTotal !== null ? u.diffTotal : u.diffSuneung;
+        const diffText = refDiff !== null ? (refDiff >= 0 ? '+' + refDiff.toFixed(1) : refDiff.toFixed(1)) : '-';
+        const diffColor = refDiff !== null ? (refDiff >= 10 ? '#4ADE80' : refDiff >= -5 ? '#FACC15' : '#F87171') : 'var(--muted)';
+
+        g += `
+        <div class="sa-univ-card ${expanded ? 'sa-expanded' : ''}" data-univ-id="${u.id}">
+          <div class="sa-univ-main" data-toggle-univ="${u.id}">
+            <div class="sa-univ-info">
+              <div class="sa-univ-name">${escapeHtml(u.university)}</div>
+              <div class="sa-univ-dept">${escapeHtml(u.department)}</div>
+              <div class="sa-univ-tags">
+                <span class="sa-tag sa-tag-group">${u.group}</span>
+                <span class="sa-tag">${u.location || ''}</span>
+                ${u.competition_rate ? `<span class="sa-tag">경쟁률 ${u.competition_rate}:1</span>` : ''}
+              </div>
+            </div>
+            <div class="sa-univ-score">
+              <div class="sa-diff-badge" style="color:${diffColor};border-color:${diffColor}33">${diffText}</div>
+              <div class="sa-univ-composition">
+                ${u.suneung_ratio ? `<span>수능 ${Math.round(u.suneung_ratio * 100)}%</span>` : ''}
+                ${u.sports_ratio ? `<span>실기 ${Math.round(u.sports_ratio * 100)}%</span>` : ''}
+              </div>
+            </div>
+            <div class="sa-univ-chevron"><i class="fas fa-chevron-${expanded ? 'up' : 'down'}"></i></div>
+          </div>
+          ${expanded ? renderUnivDetail(u) : ''}
+        </div>`;
+      }
+      g += '</div>';
+      return g;
+    }
+
+    html += renderUnivGroup('🟢 안정 지원', '#4ADE80', 'fa-check-circle', high);
+    html += renderUnivGroup('🟡 소신 지원', '#FACC15', 'fa-minus-circle', medium);
+    html += renderUnivGroup('🔴 도전 지원', '#F87171', 'fa-exclamation-circle', challenge);
+    if (noData.length > 0) {
+      html += renderUnivGroup('⚪ 커트라인 미공개', 'var(--muted)', 'fa-question-circle', noData);
+    }
+
+    // 5) 맞춤 조언 카드
+    html += renderAnalysisAdvice(analysis, studentData);
+  }
+
+  // 조건 변경 바텀시트
+  html += renderConditionBottomSheet(sessions, sel, month);
+
+  html += '</div>'; // .sa-page
+  return html;
+}
+
+// 대학 상세 아코디언 내용
+function renderUnivDetail(u) {
+  let d = '<div class="sa-univ-detail">';
+
+  // 수능 환산 점수
+  d += `
+  <div class="sa-detail-section">
+    <div class="sa-detail-title">수능 환산</div>
+    <div class="sa-detail-row">
+      <span>내 환산점수</span><strong>${u.suneungScore.toFixed(1)}점</strong>
+    </div>
+    ${u.cutlineSuneung > 0 ? `<div class="sa-detail-row"><span>수능 커트라인</span><strong>${u.cutlineSuneung.toFixed(1)}점</strong></div>
+    <div class="sa-detail-row"><span>차이</span><strong style="color:${(u.diffSuneung || 0) >= 0 ? '#4ADE80' : '#F87171'}">${u.diffSuneung >= 0 ? '+' : ''}${(u.diffSuneung || 0).toFixed(1)}점</strong></div>` : ''}
+  </div>`;
+
+  // 실기 추정
+  if (u.sports_events && u.sports_events.length > 0) {
+    d += `
+    <div class="sa-detail-section">
+      <div class="sa-detail-title">실기 추정 (${u.sports_events.length}종목)</div>
+      <div class="sa-detail-row"><span>추정 실기점수</span><strong>${u.sportsScore.toFixed(1)}점 / ${u.sports_total || 0}점</strong></div>
+      <div class="sa-detail-row"><span>달성률</span><strong>${(u.sportsRatio * 100).toFixed(0)}%</strong></div>
+      <div class="sa-detail-events">
+        ${u.perEvent.map(e => {
+          const pct = (e.ratio * 100).toFixed(0);
+          return `<div class="sa-event-item">
+            <span class="sa-event-name">${e.event}</span>
+            <span class="sa-event-val">${e.val > 0 ? e.val + (e.field.unit || '') : '미입력'}</span>
+            <div class="sa-event-bar"><div class="sa-event-bar-fill" style="width:${pct}%"></div></div>
+            <span class="sa-event-pct">${pct}%</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }
+
+  // 전형 정보
+  d += `
+  <div class="sa-detail-section">
+    <div class="sa-detail-title">전형 정보</div>
+    ${u.score_method ? `<div class="sa-detail-row"><span>성적 반영</span><span>${u.score_method}</span></div>` : ''}
+    ${u.capacity ? `<div class="sa-detail-row"><span>모집인원</span><span>${u.capacity}명</span></div>` : ''}
+    ${u.competition_rate ? `<div class="sa-detail-row"><span>경쟁률</span><span>${u.competition_rate}:1</span></div>` : ''}
+    ${u.univ_type ? `<div class="sa-detail-row"><span>대학유형</span><span>${u.univ_type}</span></div>` : ''}
+    ${u.suneung_ratio ? `<div class="sa-detail-row"><span>수능 비율</span><span>${Math.round(u.suneung_ratio * 100)}%</span></div>` : ''}
+    ${u.sports_ratio ? `<div class="sa-detail-row"><span>실기 비율</span><span>${Math.round(u.sports_ratio * 100)}%</span></div>` : ''}
+  </div>`;
+
+  // 총점 요약
+  if (u.cutlineTotal > 0) {
+    d += `
+    <div class="sa-detail-section">
+      <div class="sa-detail-title">총점 비교</div>
+      <div class="sa-detail-row"><span>내 추정 총점</span><strong>${u.totalScore.toFixed(1)}점</strong></div>
+      <div class="sa-detail-row"><span>총 커트라인</span><strong>${u.cutlineTotal.toFixed(1)}점</strong></div>
+      <div class="sa-detail-row"><span>차이</span><strong style="color:${(u.diffTotal || 0) >= 0 ? '#4ADE80' : '#F87171'}">${u.diffTotal >= 0 ? '+' : ''}${(u.diffTotal || 0).toFixed(1)}점</strong></div>
+    </div>`;
+  }
+
+  d += '</div>';
+  return d;
+}
+
+// 맞춤 조언 카드
+function renderAnalysisAdvice(analysis, studentData) {
+  if (!analysis || !analysis.all) return '';
+
+  // 가장 가까운 도전 대학들에서 조언 수집
+  const allAdvice = [];
+  // 소신 지원 대학 중 가장 위험한 것 + 도전 대학 중 가장 가까운 것
+  const nearMiss = [...(analysis.medium || []), ...(analysis.challenge || [])].filter(u => u.advice && u.advice.suggestions && u.advice.suggestions.length > 0).slice(0, 5);
+
+  // 중복 제거된 조언 모음
+  const seenActions = new Set();
+  for (const u of nearMiss) {
+    for (const s of u.advice.suggestions) {
+      if (!seenActions.has(s.action)) {
+        seenActions.add(s.action);
+        allAdvice.push({ ...s, univName: u.university });
+      }
+    }
+  }
+
+  // 실기 관련 조언 추가 — 실기 종목 누락된 도전대학
+  const sportsAdvice = [];
+  for (const u of (analysis.challenge || []).slice(0, 3)) {
+    if (u.perEvent) {
+      const missing = u.perEvent.filter(e => e.val <= 0);
+      if (missing.length > 0) {
+        sportsAdvice.push({
+          icon: 'fa-running', color: 'var(--green)',
+          action: `${u.university}: ${missing.map(e => e.event).join(', ')} 실기 기록 입력 필요`,
+          univName: u.university
+        });
+      }
+      const low = u.perEvent.filter(e => e.val > 0 && e.ratio < 0.4).slice(0, 2);
+      for (const e of low) {
+        const target = e.field.direction === 'lower'
+          ? (e.field.min + (e.field.max - e.field.min) * 0.4).toFixed(1)
+          : (e.field.min + (e.field.max - e.field.min) * 0.6).toFixed(1);
+        sportsAdvice.push({
+          icon: 'fa-bullseye', color: 'var(--orange)',
+          action: `${e.event} 기록을 ${target}${e.field.unit}까지 올리면 ${u.university} 실기점수 향상`,
+          univName: u.university
+        });
+      }
+    }
+  }
+
+  const combinedAdvice = [...allAdvice.slice(0, 3), ...sportsAdvice.slice(0, 2)];
+  if (combinedAdvice.length === 0) {
+    // 안정 지원 대학이 많으면 축하 메시지
+    if (analysis.high && analysis.high.length >= 3) {
+      return `
+      <div class="sa-advice-card sa-advice-positive">
+        <div class="sa-advice-title"><i class="fas fa-star"></i> 맞춤 학습 조언</div>
+        <div class="sa-advice-item">
+          <span class="sa-advice-icon" style="color:#4ADE80"><i class="fas fa-trophy"></i></span>
+          <span>안정 지원 가능한 대학이 ${analysis.high.length}개교입니다. 실기 준비에 집중하세요!</span>
+        </div>
+      </div>`;
+    }
+    return '';
+  }
+
+  let advHtml = `
+  <div class="sa-advice-card">
+    <div class="sa-advice-title"><i class="fas fa-lightbulb"></i> 맞춤 학습 조언</div>`;
+
+  for (const a of combinedAdvice) {
+    advHtml += `
+    <div class="sa-advice-item">
+      <span class="sa-advice-icon" style="color:${a.color || 'var(--accent)'}"><i class="fas ${a.icon || 'fa-arrow-up'}"></i></span>
+      <span>${a.action}</span>
+    </div>`;
+  }
+
+  advHtml += '</div>';
+  return advHtml;
+}
+
+// 조건 변경 바텀시트
+function renderConditionBottomSheet(sessions, currentSessionId, currentMonth) {
   return `
-  <div class="student-page reveal">
-    <div class="empty-state" style="padding:80px 24px">
-      <div class="empty-state-icon"><i class="fas fa-chart-bar"></i></div>
-      <div class="empty-state-title">나의 분석 결과</div>
-      <div class="empty-state-desc">준비 중입니다<br><span style="font-size:13px;color:var(--muted)">곧 서비스가 제공될 예정입니다</span></div>
+  <div class="sa-condition-overlay ${_analysisState.conditionSheet ? 'active' : ''}" id="sa-condition-overlay">
+    <div class="sa-condition-sheet ${_analysisState.conditionSheet ? 'active' : ''}">
+      <div class="stu-bottomsheet-handle"></div>
+      <div class="sa-condition-sheet-title">분석 조건 변경</div>
+      <div class="sa-condition-sheet-body">
+        <div class="sa-condition-group">
+          <div class="sa-condition-label">차시 선택</div>
+          <div class="sa-condition-options" id="sa-condition-sessions">
+            ${sessions.map(s => `
+            <button class="sa-condition-opt ${s.id === currentSessionId ? 'active' : ''}" data-cond-session="${s.id}">
+              ${s.number}차시 (${formatSessionDate(s.date)})
+            </button>`).join('')}
+            ${sessions.length === 0 ? '<div style="color:var(--muted);font-size:13px">등록된 차시가 없습니다</div>' : ''}
+          </div>
+        </div>
+        <div class="sa-condition-group">
+          <div class="sa-condition-label">시행월 선택</div>
+          <div class="sa-condition-options" id="sa-condition-months">
+            ${EXAM_MONTHS.map(m => `
+            <button class="sa-condition-opt ${m === currentMonth ? 'active' : ''}" data-cond-month="${m}">
+              ${m === '11월' ? '11월(수능)' : m}
+            </button>`).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="sa-condition-sheet-actions">
+        <button class="sa-condition-apply" id="btn-condition-apply"><i class="fas fa-check"></i> 적용하기</button>
+      </div>
     </div>
   </div>`;
 }
@@ -4175,6 +4707,106 @@ function bindEvents() {
         showToast(`${addedCount}명의 학생 데이터를 붙여넣었습니다.`);
         render();
       }
+    });
+  }
+
+  // ═══ 학생 분석 페이지 이벤트 ═══
+  // 대학 데이터 자동 로드 (분석 탭 진입 시)
+  if (state.mainTab === 'analysis' && isStudent() && !_analysisState.universities && !_analysisState.loading) {
+    _analysisState.loading = true;
+    render(); // 로딩 표시
+    fetch(API + '/api/universities')
+      .then(r => r.json())
+      .then(data => {
+        _analysisState.universities = data.universities || [];
+        _analysisState.loading = false;
+        render();
+      })
+      .catch(() => {
+        _analysisState.universities = [];
+        _analysisState.loading = false;
+        _analysisState.error = '대학 데이터를 불러올 수 없습니다';
+        render();
+      });
+  }
+
+  // 조건 변경 버튼
+  const btnCondition = document.getElementById('btn-analysis-condition');
+  if (btnCondition) {
+    btnCondition.addEventListener('click', () => {
+      _analysisState.conditionSheet = true;
+      const overlay = document.getElementById('sa-condition-overlay');
+      const sheet = overlay && overlay.querySelector('.sa-condition-sheet');
+      if (overlay) overlay.classList.add('active');
+      if (sheet) sheet.classList.add('active');
+    });
+  }
+
+  // 조건 바텀시트 닫기
+  const condOverlay = document.getElementById('sa-condition-overlay');
+  if (condOverlay) {
+    condOverlay.addEventListener('click', (e) => {
+      if (e.target === condOverlay) {
+        _analysisState.conditionSheet = false;
+        condOverlay.classList.remove('active');
+        const sheet = condOverlay.querySelector('.sa-condition-sheet');
+        if (sheet) sheet.classList.remove('active');
+      }
+    });
+  }
+
+  // 조건 선택 — 차시
+  document.querySelectorAll('[data-cond-session]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-cond-session]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // 조건 선택 — 시행월
+  document.querySelectorAll('[data-cond-month]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-cond-month]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // 조건 적용 버튼
+  const btnApplyCondition = document.getElementById('btn-condition-apply');
+  if (btnApplyCondition) {
+    btnApplyCondition.addEventListener('click', () => {
+      const activeSession = document.querySelector('[data-cond-session].active');
+      const activeMonth = document.querySelector('[data-cond-month].active');
+      if (activeSession) {
+        state.selectedSession = activeSession.dataset.condSession;
+        saveSelectedSession(state.selectedSession);
+      }
+      if (activeMonth) {
+        state.selectedExamMonth = activeMonth.dataset.condMonth;
+      }
+      _analysisState.conditionSheet = false;
+      _analysisState.expandedUnivId = null;
+      showToast('분석 조건이 변경되었습니다');
+      render();
+    });
+  }
+
+  // 대학 카드 아코디언 토글
+  document.querySelectorAll('[data-toggle-univ]').forEach(el => {
+    el.addEventListener('click', () => {
+      const id = parseInt(el.dataset.toggleUniv);
+      _analysisState.expandedUnivId = _analysisState.expandedUnivId === id ? null : id;
+      render();
+    });
+  });
+
+  // "나의 기록으로 이동" 링크
+  const btnGotoRecords = document.getElementById('btn-goto-records') || document.getElementById('btn-goto-records-2');
+  if (btnGotoRecords) {
+    btnGotoRecords.addEventListener('click', () => {
+      state.mainTab = 'records';
+      localStorage.setItem('k1-main-tab', 'records');
+      render();
     });
   }
 
