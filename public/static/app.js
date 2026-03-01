@@ -1879,8 +1879,8 @@ function renderStudentRecordsPage() {
     <!-- 3-3. 실기 기록 카드 (읽기 전용) -->
     ${renderStudentSportSection(myRecord, prevRecord, isFirstSession)}
 
-    <!-- 3-4. 수능/모의고사 성적 영역 (Part 2에서 구현) -->
-    ${renderStudentExamPlaceholder()}
+    <!-- 3-4. 수능/모의고사 성적 입력 -->
+    ${renderStudentExamSection(sel)}
     `}
   </div>`;
 }
@@ -1909,33 +1909,57 @@ function renderStudentReportPage() {
   </div>`;
 }
 
-// ═══ 학생 뷰 — 수능/모의고사 자리표시 (Part 2에서 구현) ═══
-function renderStudentExamPlaceholder() {
-  return `
-  <div class="student-section student-section-placeholder">
-    <div class="student-section-header">
-      <span class="student-section-icon" style="color:var(--accent)"><i class="fas fa-pen-alt"></i></span>
-      <span>수능 / 모의고사 성적</span>
-    </div>
-    <div class="student-exam-placeholder">
-      <div class="student-exam-placeholder-icon"><i class="fas fa-clock"></i></div>
-      <div class="student-exam-placeholder-text">이 영역은 곧 추가될 예정입니다.</div>
-    </div>
-  </div>`;
+// ═══ 모의고사 데이터 — LocalStorage 독립 저장 ═══
+function getMockExamKey(studentId, sessionId, month) {
+  const m = month.replace('월', '');
+  return `mockExam_${studentId}_${sessionId}_${m}`;
 }
 
-// ═══ 학생 뷰 — 수능/모의고사 성적 (시행월별 분리, 터치 친화적 UI) — Part 2용 보존 ═══
-function renderStudentExamSection(rec, sessionId) {
+function loadMockExam(studentId, sessionId, month) {
+  try {
+    const key = getMockExamKey(studentId, sessionId, month);
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveMockExam(studentId, sessionId, month, data) {
+  const key = getMockExamKey(studentId, sessionId, month);
+  data.savedAt = new Date().toISOString();
+  data.month = parseInt(month.replace('월', ''));
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+function getEmptyMockExam() {
+  return {
+    korean: { subject: '화작', grade: null, rawScore: null, standardScore: null, percentile: null },
+    math: { subject: '확통', grade: null, rawScore: null, standardScore: null, percentile: null },
+    inquiry: {
+      inquiry1: { subject: '생윤', rawScore: null, standardScore: null, percentile: null },
+      inquiry2: { subject: '윤사', rawScore: null, standardScore: null, percentile: null }
+    },
+    english: { grade: null },
+    koreanHistory: { grade: null }
+  };
+}
+
+// ═══ 학생 뷰 — 수능/모의고사 성적 (시행월별 분리, 터치 친화적 UI) ═══
+function renderStudentExamSection(sessionId) {
+  const cu = state.currentUser;
+  if (!cu || !cu.studentId) return '';
   const isEditing = state.studentMockEditing || false;
-  const recordId = rec ? rec.id : null;
   const month = state.selectedExamMonth || '3월';
-  const examData = getExamData(rec, month);
-  const k = examData.korean || { subject: '언매', grade: null, rawScore: null, standardScore: null, percentile: null };
-  const m = examData.math || { subject: '확통', grade: null, rawScore: null, standardScore: null, percentile: null };
-  const iq1 = examData.inquiry1 || { subject: '생윤', rawScore: null, standardScore: null, percentile: null };
-  const iq2 = examData.inquiry2 || { subject: '윤사', rawScore: null, standardScore: null, percentile: null };
-  const engGrade = examData.englishGrade;
-  const hisGrade = examData.koreanHistoryGrade;
+
+  // LocalStorage에서 해당 월 데이터 로드
+  const saved = loadMockExam(cu.studentId, sessionId, month);
+  const d = saved || getEmptyMockExam();
+  const k = d.korean || { subject: '화작', grade: null, rawScore: null, standardScore: null, percentile: null };
+  const m = d.math || { subject: '확통', grade: null, rawScore: null, standardScore: null, percentile: null };
+  const iq = d.inquiry || { inquiry1: { subject: '생윤' }, inquiry2: { subject: '윤사' } };
+  const iq1 = iq.inquiry1 || { subject: '생윤', rawScore: null, standardScore: null, percentile: null };
+  const iq2 = iq.inquiry2 || { subject: '윤사', rawScore: null, standardScore: null, percentile: null };
+  const engGrade = d.english ? d.english.grade : null;
+  const hisGrade = d.koreanHistory ? d.koreanHistory.grade : null;
 
   const val = (v) => v !== null && v !== undefined ? v : '';
   const dis = (v) => v !== null && v !== undefined && v !== '' ? v : '-';
@@ -1971,7 +1995,7 @@ function renderStudentExamSection(rec, sessionId) {
     if (!isEditing) {
       return `<div class="stu-exam-val">${dis(displayLabel)}</div>`;
     }
-    return `<button type="button" class="stu-subject-picker-btn" data-subject-picker="${name}" data-subject-type="${type}">
+    return `<button type="button" class="stu-subject-picker-btn" data-subject-picker="${name}" data-subject-type="${type}" data-selected-subject-value="${value || ''}">
       <span>${displayLabel || '선택'}</span>
       <i class="fas fa-chevron-down" style="font-size:10px;opacity:0.6"></i>
     </button>`;
@@ -1990,13 +2014,12 @@ function renderStudentExamSection(rec, sessionId) {
 
     <!-- 시행 월 선택 -->
     <div class="stu-month-selector">
-      <div class="stu-month-label"><i class="fas fa-calendar-alt"></i> 시행 월 선택</div>
+      <div class="stu-month-label"><i class="fas fa-calendar-alt"></i> 시행 월</div>
       <div class="stu-month-btns">
         ${EXAM_MONTHS.map(mo =>
           `<button type="button" class="stu-month-btn ${month === mo ? 'active' : ''}" data-exam-month="${mo}">${EXAM_MONTH_LABELS[mo]}</button>`
         ).join('')}
       </div>
-      <div class="stu-month-hint">해당하는 시험을 선택하세요</div>
     </div>
 
     <div class="stu-exam-grid">
@@ -2028,7 +2051,8 @@ function renderStudentExamSection(rec, sessionId) {
         <div class="stu-exam-row"><span class="stu-exam-label">원점수</span>${numInput('inquiry1.rawScore', iq1.rawScore, { min: 0, max: 50, placeholder: '0~50' })}</div>
         <div class="stu-exam-row"><span class="stu-exam-label">표준점수</span>${numInput('inquiry1.standardScore', iq1.standardScore, { min: 0, max: 100, placeholder: '표준점수' })}</div>
         <div class="stu-exam-row"><span class="stu-exam-label">백분위</span>${numInput('inquiry1.percentile', iq1.percentile, { min: 0, max: 100, placeholder: '0~100' })}</div>
-        <div class="stu-exam-sub-label" style="margin-top:12px">탐구 2</div>
+        <div class="stu-exam-sub-divider"></div>
+        <div class="stu-exam-sub-label">탐구 2</div>
         <div class="stu-exam-row"><span class="stu-exam-label">선택과목</span>${subjectPicker('inquiry2.subject', iq2.subject, 'inquiry')}</div>
         <div class="stu-exam-row"><span class="stu-exam-label">원점수</span>${numInput('inquiry2.rawScore', iq2.rawScore, { min: 0, max: 50, placeholder: '0~50' })}</div>
         <div class="stu-exam-row"><span class="stu-exam-label">표준점수</span>${numInput('inquiry2.standardScore', iq2.standardScore, { min: 0, max: 100, placeholder: '표준점수' })}</div>
@@ -2051,7 +2075,7 @@ function renderStudentExamSection(rec, sessionId) {
     ${isEditing ? `
     <div class="student-mock-actions">
       <button class="student-cancel-btn" id="btn-mock-cancel"><i class="fas fa-times"></i> 취소</button>
-      <button class="student-save-btn" id="btn-student-save" data-save-session="${sessionId}" data-save-record="${recordId || ''}" data-save-month="${month}">
+      <button class="student-save-btn" id="btn-student-save" data-save-session="${sessionId}" data-save-month="${month}">
         <i class="fas fa-save"></i> 저장하기
       </button>
     </div>` : ''}
@@ -3791,72 +3815,43 @@ function bindEvents() {
     });
   }
 
-  // ── 학생 뷰 — 모의고사 저장 (시행월별) ──
+  // ── 학생 뷰 — 모의고사 저장 (독립 LocalStorage 키) ──
   const studentSaveBtn = document.getElementById('btn-student-save');
   if (studentSaveBtn) {
     studentSaveBtn.addEventListener('click', () => {
+      const cu = state.currentUser;
+      if (!cu || !cu.studentId) return;
       const sid = studentSaveBtn.dataset.saveSession;
-      const rid = studentSaveBtn.dataset.saveRecord;
       const month = studentSaveBtn.dataset.saveMonth || '3월';
-      const session = state.sessions.find(s => s.id === sid);
-      if (!session) return;
 
-      // record가 없으면 자동 생성
-      let record;
-      if (rid) {
-        record = (session.records || []).find(r => r.id === rid);
-      }
-      if (!record) {
-        const cu = state.currentUser;
-        if (!session.records) session.records = [];
-        record = createEmptyRecord();
-        record.id = cu.studentId;
-        record.studentName = cu.studentName;
-        record.school = cu.school || '';
-        record.grade = cu.grade || '';
-        record.class = cu.class || '';
-        session.records.push(record);
-      }
-
-      // exams 구조 확인
-      if (!record.exams) record.exams = {};
-      if (!record.exams[month]) record.exams[month] = createEmptyExam();
-      const examData = record.exams[month];
-
+      const data = getEmptyMockExam();
       let hasError = false;
 
-      // 선택과목 값 파싱 (바텀시트에서 선택한 값)
+      // 선택과목 값 파싱
       document.querySelectorAll('[data-subject-picker]').forEach(btn => {
         const path = btn.dataset.subjectPicker;
-        const parts = path.split('.');
         const val = btn.dataset.selectedSubjectValue;
-        if (val) {
-          if (parts.length === 2) {
-            if (!examData[parts[0]] || typeof examData[parts[0]] !== 'object') examData[parts[0]] = {};
-            examData[parts[0]][parts[1]] = val;
-          }
-        }
+        if (!val) return;
+        if (path === 'korean.subject') data.korean.subject = val;
+        else if (path === 'math.subject') data.math.subject = val;
+        else if (path === 'inquiry1.subject') data.inquiry.inquiry1.subject = val;
+        else if (path === 'inquiry2.subject') data.inquiry.inquiry2.subject = val;
       });
 
       // 등급 피커에서 값 파싱
       document.querySelectorAll('.stu-grade-picker[data-exam-field]').forEach(picker => {
         const path = picker.dataset.examField;
         const selectedVal = picker.dataset.selectedValue;
-        if (selectedVal) {
-          const parts = path.split('.');
-          if (parts.length === 2) {
-            if (!examData[parts[0]] || typeof examData[parts[0]] !== 'object') examData[parts[0]] = {};
-            examData[parts[0]][parts[1]] = Number(selectedVal);
-          } else {
-            examData[parts[0]] = Number(selectedVal);
-          }
-        }
+        const numVal = selectedVal ? Number(selectedVal) : null;
+        if (path === 'korean.grade') data.korean.grade = numVal;
+        else if (path === 'math.grade') data.math.grade = numVal;
+        else if (path === 'englishGrade') data.english.grade = numVal;
+        else if (path === 'koreanHistoryGrade') data.koreanHistory.grade = numVal;
       });
 
       // 숫자 입력 필드 파싱
       document.querySelectorAll('input[data-exam-field]').forEach(inp => {
         const path = inp.dataset.examField;
-        const parts = path.split('.');
         const val = inp.value;
         const numVal = val === '' ? null : Number(val);
         if (val !== '' && isNaN(numVal)) {
@@ -3866,26 +3861,22 @@ function bindEvents() {
           return;
         }
         inp.classList.remove('input-error');
-        if (parts.length === 2) {
-          if (!examData[parts[0]] || typeof examData[parts[0]] !== 'object') examData[parts[0]] = {};
-          examData[parts[0]][parts[1]] = numVal;
-        } else {
-          examData[parts[0]] = numVal;
-        }
+        if (path === 'korean.rawScore') data.korean.rawScore = numVal;
+        else if (path === 'korean.standardScore') data.korean.standardScore = numVal;
+        else if (path === 'korean.percentile') data.korean.percentile = numVal;
+        else if (path === 'math.rawScore') data.math.rawScore = numVal;
+        else if (path === 'math.standardScore') data.math.standardScore = numVal;
+        else if (path === 'math.percentile') data.math.percentile = numVal;
+        else if (path === 'inquiry1.rawScore') data.inquiry.inquiry1.rawScore = numVal;
+        else if (path === 'inquiry1.standardScore') data.inquiry.inquiry1.standardScore = numVal;
+        else if (path === 'inquiry1.percentile') data.inquiry.inquiry1.percentile = numVal;
+        else if (path === 'inquiry2.rawScore') data.inquiry.inquiry2.rawScore = numVal;
+        else if (path === 'inquiry2.standardScore') data.inquiry.inquiry2.standardScore = numVal;
+        else if (path === 'inquiry2.percentile') data.inquiry.inquiry2.percentile = numVal;
       });
       if (hasError) return;
 
-      // 하위호환: flat 필드에도 동기화 (관리자 테이블 표시용)
-      record.korean = { ...examData.korean };
-      record.math = { ...examData.math };
-      record.inquiry1 = { ...examData.inquiry1 };
-      record.inquiry2 = { ...examData.inquiry2 };
-      record.englishGrade = examData.englishGrade;
-      record.koreanHistoryGrade = examData.koreanHistoryGrade;
-
-      record.lastEditedBy = 'student';
-      record.lastEditedAt = new Date().toISOString();
-      saveSessions(state.sessions);
+      saveMockExam(cu.studentId, sid, month, data);
       state.studentMockEditing = false;
       showToast(`${EXAM_MONTH_LABELS[month]} 성적이 저장되었습니다.`);
       render();

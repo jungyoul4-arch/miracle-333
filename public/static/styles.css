@@ -3583,6 +3583,18 @@ body,
 .student-edit-btn:hover {
   background: rgba(var(--accent-rgb), 0.15);
 }
+.student-editable-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 
 /* ═══ 시행 월 선택기 ═══ */
 .stu-month-selector {
@@ -3870,6 +3882,11 @@ body,
   color: var(--muted);
   margin-bottom: 6px;
   padding-top: 4px;
+}
+.stu-exam-sub-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 10px 0 6px;
 }
 .stu-exam-info-box {
   margin-top: 14px;
