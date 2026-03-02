@@ -2813,6 +2813,20 @@ function renderStudentRecordsPage() {
 
     <!-- 3-4. 수능/모의고사 성적 입력 -->
     ${renderStudentExamSection(sel)}
+
+    <!-- 3-5. 분석 결과 바로가기 -->
+    ${(() => {
+      const hasMock = loadMockExam(cu.studentId, sel, state.selectedExamMonth || '3월');
+      if (hasMock) {
+        return `
+        <div class="student-analysis-link-card" style="margin-top:16px;padding:16px;background:rgba(0,210,211,0.08);border:1px solid rgba(0,210,211,0.2);border-radius:12px;text-align:center">
+          <div style="font-size:13px;color:var(--text);margin-bottom:8px"><i class="fas fa-check-circle" style="color:#4ADE80"></i> 성적이 입력되어 있습니다</div>
+          <button class="sa-warning-link" id="btn-goto-analysis-from-records" style="display:inline-flex;align-items:center;gap:6px;padding:8px 20px;font-size:14px;font-weight:600;border-radius:8px;background:var(--accent);color:var(--bg);border:none;cursor:pointer"><i class="fas fa-chart-bar"></i> 나의 분석 결과 보기</button>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">입력된 성적을 기반으로 대학별 합격 가능성을 분석합니다</div>
+        </div>`;
+      }
+      return '';
+    })()}
     `}
   </div>`;
 }
@@ -2988,11 +3002,49 @@ function renderStudentAnalysisPage() {
   if (!cu || !cu.studentId) return '<div class="student-page reveal"><div class="empty-state" style="padding:80px 24px"><div class="empty-state-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="empty-state-title">로그인이 필요합니다</div></div></div>';
 
   const sessions = state.sessions.slice().sort((a, b) => b.number - a.number);
-  const sel = state.selectedSession || (sessions.length ? sessions[0].id : null);
-  const selectedObj = sessions.find(s => s.id === sel);
-  const month = state.selectedExamMonth || '3월';
-  const myRecord = selectedObj ? getMyRecord(sel) : null;
-  const mockData = selectedObj ? loadMockExam(cu.studentId, sel, month) : null;
+  let sel = state.selectedSession || (sessions.length ? sessions[0].id : null);
+  let selectedObj = sessions.find(s => s.id === sel);
+  let month = state.selectedExamMonth || '3월';
+  let myRecord = selectedObj ? getMyRecord(sel) : null;
+  let mockData = selectedObj ? loadMockExam(cu.studentId, sel, month) : null;
+
+  // ── 자동 모의고사 데이터 탐색 ──
+  // 현재 세션+월 조합에 데이터가 없으면, 다른 월과 다른 세션에서 자동 탐색
+  if (!mockData && sessions.length > 0) {
+    // 1단계: 현재 세션의 다른 월 탐색 (최신 월부터)
+    const monthOrder = ['11월', '9월', '6월', '3월'];
+    for (const m of monthOrder) {
+      if (m === month) continue;
+      const d = loadMockExam(cu.studentId, sel, m);
+      if (d) {
+        mockData = d;
+        month = m;
+        state.selectedExamMonth = m;
+        break;
+      }
+    }
+    // 2단계: 다른 세션(최신부터) + 모든 월 탐색
+    if (!mockData) {
+      outer:
+      for (const s of sessions) {
+        if (s.id === sel) continue;
+        for (const m of monthOrder) {
+          const d = loadMockExam(cu.studentId, s.id, m);
+          if (d) {
+            mockData = d;
+            month = m;
+            sel = s.id;
+            selectedObj = s;
+            state.selectedSession = sel;
+            state.selectedExamMonth = m;
+            myRecord = getMyRecord(sel);
+            break outer;
+          }
+        }
+      }
+    }
+  }
+
   const studentData = buildStudentFromMockExam(mockData, myRecord);
   const missingData = checkDataCompleteness(studentData, mockData);
 
@@ -3328,6 +3380,24 @@ function renderAnalysisAdvice(analysis, studentData) {
 
 // 조건 변경 바텀시트
 function renderConditionBottomSheet(sessions, currentSessionId, currentMonth) {
+  const cu = state.currentUser;
+  const studentId = cu ? cu.studentId : null;
+
+  // 각 세션별 사용 가능한 월 표시
+  function sessionHasData(sId) {
+    if (!studentId) return false;
+    for (const m of EXAM_MONTHS) {
+      if (loadMockExam(studentId, sId, m)) return true;
+    }
+    return false;
+  }
+
+  // 현재 세션에서 사용 가능한 월 표시
+  function monthHasData(m) {
+    if (!studentId || !currentSessionId) return false;
+    return !!loadMockExam(studentId, currentSessionId, m);
+  }
+
   return `
   <div class="sa-condition-overlay ${_analysisState.conditionSheet ? 'active' : ''}" id="sa-condition-overlay">
     <div class="sa-condition-sheet ${_analysisState.conditionSheet ? 'active' : ''}">
@@ -3340,6 +3410,7 @@ function renderConditionBottomSheet(sessions, currentSessionId, currentMonth) {
             ${sessions.map(s => `
             <button class="sa-condition-opt ${s.id === currentSessionId ? 'active' : ''}" data-cond-session="${s.id}">
               ${s.number}차시 (${formatSessionDate(s.date)})
+              ${sessionHasData(s.id) ? '<span style="color:#4ADE80;font-size:10px;margin-left:4px">●</span>' : '<span style="color:var(--muted);font-size:10px;margin-left:4px">○</span>'}
             </button>`).join('')}
             ${sessions.length === 0 ? '<div style="color:var(--muted);font-size:13px">등록된 차시가 없습니다</div>' : ''}
           </div>
@@ -3350,8 +3421,10 @@ function renderConditionBottomSheet(sessions, currentSessionId, currentMonth) {
             ${EXAM_MONTHS.map(m => `
             <button class="sa-condition-opt ${m === currentMonth ? 'active' : ''}" data-cond-month="${m}">
               ${m === '11월' ? '11월(수능)' : m}
+              ${monthHasData(m) ? '<span style="color:#4ADE80;font-size:10px;margin-left:4px">●</span>' : '<span style="color:var(--muted);font-size:10px;margin-left:4px">○</span>'}
             </button>`).join('')}
           </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px"><span style="color:#4ADE80">●</span> 데이터 있음 &nbsp; <span style="color:var(--muted)">○</span> 데이터 없음</div>
         </div>
       </div>
       <div class="sa-condition-sheet-actions">
@@ -3819,15 +3892,25 @@ async function runBulkAnalysis() {
   await new Promise(r => setTimeout(r, 300));
 
   const month = state.selectedExamMonth || '3월';
+  const monthOrder = ['11월', '9월', '6월', '3월'];
   let analyzed = 0;
   for (const rec of session.records) {
     if (!rec.studentName) continue;
-    const mockData = loadMockExam(rec.id, sid, month);
+    // 현재 월에 데이터 없으면 다른 월 자동 탐색
+    let mockData = loadMockExam(rec.id, sid, month);
+    let usedMonth = month;
+    if (!mockData) {
+      for (const m of monthOrder) {
+        if (m === month) continue;
+        const d = loadMockExam(rec.id, sid, m);
+        if (d) { mockData = d; usedMonth = m; break; }
+      }
+    }
     const studentData = buildStudentFromMockExam(mockData, rec);
     const result = analyzeUniversitiesForStudent(univs, studentData);
     // 분석 결과를 캐시 (화면 새로고침 시까지 유지)
     if (!state._bulkAnalysis) state._bulkAnalysis = {};
-    state._bulkAnalysis[rec.id] = { result, studentData, mockData, timestamp: Date.now() };
+    state._bulkAnalysis[rec.id] = { result, studentData, mockData, month: usedMonth, timestamp: Date.now() };
     analyzed++;
   }
 
@@ -3872,8 +3955,17 @@ function renderStudentDrawer() {
   if (!rec) return;
 
   const univs = state.admin.universities || [];
-  const month = state.selectedExamMonth || '3월';
-  const mockData = loadMockExam(rec.id, sid, month);
+  let month = state.selectedExamMonth || '3월';
+  let mockData = loadMockExam(rec.id, sid, month);
+  // 현재 월에 데이터 없으면 다른 월 자동 탐색
+  if (!mockData) {
+    const monthOrder = ['11월', '9월', '6월', '3월'];
+    for (const m of monthOrder) {
+      if (m === month) continue;
+      const d = loadMockExam(rec.id, sid, m);
+      if (d) { mockData = d; month = m; break; }
+    }
+  }
   const studentData = buildStudentFromMockExam(mockData, rec);
   const analysis = analyzeUniversitiesForStudent(univs, studentData);
 
@@ -6238,8 +6330,17 @@ function bindEvents() {
 
       saveMockExam(cu.studentId, sid, month, data);
       state.studentMockEditing = false;
-      showToast(`${EXAM_MONTH_LABELS[month]} 성적이 저장되었습니다.`);
+      // 분석 결과 보기 안내 토스트 (저장 후 자동)
+      showToast(`${EXAM_MONTH_LABELS[month]} 성적이 저장되었습니다`);
+      // 분석 결과 캐시 무효화 (새 데이터로 재분석 필요)
+      if (_analysisState.universities) {
+        // 대학 데이터가 이미 있으면 캐시는 유지하되 재렌더링 시 재분석됨
+      }
       render();
+      // 저장 후 잠시 뒤 분석 결과 이동 안내
+      setTimeout(() => {
+        showToast('📊 나의 분석 결과 탭에서 대학별 합격 가능성을 확인하세요!');
+      }, 1500);
     });
   }
 
@@ -6562,15 +6663,21 @@ function bindEvents() {
   // 대학 데이터 자동 로드 (분석 탭 진입 시)
   if (state.mainTab === 'analysis' && isStudent() && !_analysisState.universities && !_analysisState.loading) {
     _analysisState.loading = true;
-    render(); // 로딩 표시
+    // 로딩 UI 즉시 갱신 (스피너 표시)
+    const saLoadingEl = document.querySelector('.sa-loading');
+    if (saLoadingEl) {
+      saLoadingEl.innerHTML = '<div class="sa-loading-spinner"></div><div>230+ 대학 분석 중...</div>';
+    }
     fetch(API + '/api/universities')
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
         _analysisState.universities = data.universities || [];
         _analysisState.loading = false;
+        console.log('[K1] 대학 데이터 로드 완료:', _analysisState.universities.length, '개');
         render();
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error('[K1] 대학 데이터 로드 실패:', err);
         _analysisState.universities = [];
         _analysisState.loading = false;
         _analysisState.error = '대학 데이터를 불러올 수 없습니다';
@@ -6654,6 +6761,16 @@ function bindEvents() {
     btnGotoRecords.addEventListener('click', () => {
       state.mainTab = 'records';
       localStorage.setItem('k1-main-tab', 'records');
+      render();
+    });
+  }
+
+  // "나의 분석 결과 보기" 링크 (기록 페이지에서)
+  const btnGotoAnalysis = document.getElementById('btn-goto-analysis-from-records');
+  if (btnGotoAnalysis) {
+    btnGotoAnalysis.addEventListener('click', () => {
+      state.mainTab = 'analysis';
+      localStorage.setItem('k1-main-tab', 'analysis');
       render();
     });
   }
