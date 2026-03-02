@@ -2864,8 +2864,17 @@ let _analysisState = {
   loading: false,
   error: null,
   expandedUnivId: null, // 아코디언에서 열린 대학 ID
-  conditionSheet: false // 조건 변경 바텀시트 상태
+  conditionSheet: false, // 조건 변경 바텀시트 상태
+  saFilter: { status: '전체', group: '전체', location: '전체', sort: 'diff', search: '' },
+  saSimOverrides: {},    // { [univId]: { sports: { eventName: val } } }
+  _currentStudentData: null
 };
+
+// 검색 디바운스 (모듈 레벨 — bindEvents 내 매번 생성 방지)
+const _debouncedSASearch = debounce(() => {
+  _analysisState.expandedUnivId = null;
+  render();
+}, 300);
 
 // 학생 모의고사 데이터를 calcSuneungLocal 형식으로 변환
 function buildStudentFromMockExam(mockData, record) {
@@ -3020,6 +3029,145 @@ function displayScore(val, suffix) {
   return `<span class="sa-score-val">${val}${suffix || ''}</span>`;
 }
 
+// ═══ 분석 필터 함수 ═══
+function applyAnalysisFilters(allResults) {
+  const f = _analysisState.saFilter;
+  let filtered = [...allResults];
+
+  if (f.status !== '전체') {
+    const map = { '안정': 'high', '소신': 'medium', '도전': 'challenge', '데이터없음': 'noData' };
+    const t = map[f.status];
+    if (t) filtered = filtered.filter(r => r.likelihood === t);
+  }
+  if (f.group !== '전체') {
+    filtered = filtered.filter(r => r.group === f.group);
+  }
+  if (f.location !== '전체') {
+    filtered = filtered.filter(r => r.location === f.location);
+  }
+  if (f.search) {
+    const q = f.search.toLowerCase();
+    filtered = filtered.filter(r =>
+      r.university.toLowerCase().includes(q) ||
+      r.department.toLowerCase().includes(q)
+    );
+  }
+
+  if (f.sort === 'diff') {
+    filtered.sort((a, b) => {
+      const ad = a.diffTotal !== null ? a.diffTotal : (a.diffSuneung ?? -999);
+      const bd = b.diffTotal !== null ? b.diffTotal : (b.diffSuneung ?? -999);
+      return bd - ad;
+    });
+  } else if (f.sort === 'rate') {
+    filtered.sort((a, b) => (a.competition_rate || 999) - (b.competition_rate || 999));
+  } else if (f.sort === 'name') {
+    filtered.sort((a, b) => a.university.localeCompare(b.university));
+  }
+
+  return filtered;
+}
+
+function renderSAFilterBar(analysis) {
+  const f = _analysisState.saFilter;
+  const all = analysis.all || [];
+  const locations = [...new Set(all.map(r => r.location).filter(Boolean))].sort();
+  const counts = {
+    '안정': analysis.high.length,
+    '소신': analysis.medium.length,
+    '도전': analysis.challenge.length,
+    '데이터없음': analysis.noData.length
+  };
+  const filtered = applyAnalysisFilters(all);
+
+  let html = `<div class="sa-filter-bar">
+    <div class="sa-filter-status-row">
+      <button class="sa-filter-status-btn ${f.status === '전체' ? 'active' : ''}" data-sa-status="전체">전체 ${all.length}</button>
+      <button class="sa-filter-status-btn sa-filter-high ${f.status === '안정' ? 'active' : ''}" data-sa-status="안정"><span class="sa-stat-dot" style="background:#4ADE80"></span> 안정 ${counts['안정']}</button>
+      <button class="sa-filter-status-btn sa-filter-medium ${f.status === '소신' ? 'active' : ''}" data-sa-status="소신"><span class="sa-stat-dot" style="background:#FACC15"></span> 소신 ${counts['소신']}</button>
+      <button class="sa-filter-status-btn sa-filter-challenge ${f.status === '도전' ? 'active' : ''}" data-sa-status="도전"><span class="sa-stat-dot" style="background:#F87171"></span> 도전 ${counts['도전']}</button>
+      <button class="sa-filter-status-btn sa-filter-nodata ${f.status === '데이터없음' ? 'active' : ''}" data-sa-status="데이터없음"><span class="sa-stat-dot" style="background:var(--muted)"></span> 미공개 ${counts['데이터없음']}</button>
+    </div>
+    <div class="sa-filter-controls-row">
+      <div class="sa-filter-search-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" class="sa-filter-search" placeholder="대학·학과 검색..." value="${escapeHtml(f.search)}" data-sa-filter="search">
+      </div>
+      <div class="sa-filter-group-btns">
+        <button class="sa-filter-group-btn ${f.group === '전체' ? 'active' : ''}" data-sa-group="전체">전체</button>
+        <button class="sa-filter-group-btn ${f.group === '가군' ? 'active' : ''}" data-sa-group="가군">가</button>
+        <button class="sa-filter-group-btn ${f.group === '나군' ? 'active' : ''}" data-sa-group="나군">나</button>
+        <button class="sa-filter-group-btn ${f.group === '다군' ? 'active' : ''}" data-sa-group="다군">다</button>
+      </div>
+      <select class="sa-filter-select" data-sa-filter="location">
+        <option value="전체" ${f.location === '전체' ? 'selected' : ''}>전체 지역</option>
+        ${locations.map(l => `<option value="${l}" ${f.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <select class="sa-filter-select" data-sa-filter="sort">
+        <option value="diff" ${f.sort === 'diff' ? 'selected' : ''}>점수차순</option>
+        <option value="rate" ${f.sort === 'rate' ? 'selected' : ''}>경쟁률순</option>
+        <option value="name" ${f.sort === 'name' ? 'selected' : ''}>이름순</option>
+      </select>
+      <span class="sa-filter-count">${filtered.length}개 대학</span>
+    </div>
+  </div>`;
+  return html;
+}
+
+// ═══ 실기 시뮬레이션 재계산 (DOM 직접 업데이트) ═══
+function recalcSASimResult(univId) {
+  const studentData = _analysisState._currentStudentData;
+  const univs = _analysisState.universities;
+  if (!studentData || !univs) return;
+
+  const univ = univs.find(u => u.id === univId);
+  if (!univ || !univ.sports_events) return;
+
+  const simOverrides = (_analysisState.saSimOverrides[univId] || {}).sports || {};
+  const sportsTotal = univ.sports_total || 0;
+  let totalR = 0, validCnt = 0;
+
+  if (sportsTotal > 0) {
+    for (const eventName of univ.sports_events) {
+      const field = findSportsField(eventName);
+      const baseVal = studentData.sports[eventName] || studentData.sports[field.key] || 0;
+      const val = simOverrides[eventName] !== undefined ? simOverrides[eventName] : baseVal;
+      if (val > 0 && field.unit !== '-') {
+        let ratio = 0;
+        if (field.unit === '점' && field.max > 0) {
+          ratio = Math.min(val / field.max, 1);
+        } else {
+          const range = field.max - field.min;
+          if (range > 0) {
+            ratio = field.direction === 'lower'
+              ? Math.max(0, Math.min(1, (field.max - val) / range))
+              : Math.max(0, Math.min(1, (val - field.min) / range));
+          }
+        }
+        totalR += ratio;
+        validCnt++;
+      }
+    }
+  }
+
+  const sportsRatio = validCnt > 0 ? totalR / validCnt : 0;
+  const sportsScore = Math.round(sportsRatio * sportsTotal * 10) / 10;
+  const suneungScore = calcSuneungLocal(studentData, univ);
+  const totalScore = suneungScore + sportsScore;
+  const cutlineTotal = univ.cutline_total || 0;
+  const diffTotal = cutlineTotal > 0 ? Math.round((totalScore - cutlineTotal) * 10) / 10 : null;
+
+  const box = document.getElementById('sa-sim-result-' + univId);
+  if (!box) return;
+  const rows = box.querySelectorAll('.sa-sim-result-row');
+  if (rows[1]) rows[1].querySelector('strong').innerHTML = `${sportsScore.toFixed(1)}점 / ${sportsTotal}점 (${(sportsRatio * 100).toFixed(0)}%)`;
+  if (rows[2]) rows[2].querySelector('strong').textContent = `${totalScore.toFixed(1)}점`;
+  if (diffTotal !== null && rows[4]) {
+    rows[4].querySelector('strong').textContent = `${diffTotal >= 0 ? '+' : ''}${diffTotal.toFixed(1)}점`;
+    rows[4].querySelector('strong').style.color = diffTotal >= 0 ? '#4ADE80' : '#F87171';
+  }
+}
+
 function renderStudentAnalysisPage() {
   const cu = state.currentUser;
   if (!cu || !cu.studentId) return '<div class="student-page reveal"><div class="empty-state" style="padding:80px 24px"><div class="empty-state-icon"><i class="fas fa-exclamation-triangle"></i></div><div class="empty-state-title">로그인이 필요합니다</div></div></div>';
@@ -3099,6 +3247,9 @@ function renderStudentAnalysisPage() {
       state.simSports = origSimSports;
     }
   }
+
+  // 시뮬레이션/상세에서 참조할 학생 데이터 저장
+  _analysisState._currentStudentData = studentData;
 
   // ── HTML 생성 ── (.reveal 사용 안 함 — fetch 완료 후 re-render 시 IntersectionObserver 타이밍 이슈 방지)
   let html = '<div class="student-page sa-page">';
@@ -3199,16 +3350,13 @@ function renderStudentAnalysisPage() {
       <button class="sa-warning-link" id="btn-goto-records-2" style="margin-top:12px"><i class="fas fa-arrow-right"></i> 성적 입력하러 가기</button>
     </div>`;
   } else if (analysis) {
-    const { high, medium, challenge, noData } = analysis;
+    const { high, medium, challenge, noData, all } = analysis;
 
-    // 통계 바
-    html += `
-    <div class="sa-stats-bar">
-      <div class="sa-stat-chip sa-stat-high"><span class="sa-stat-dot" style="background:#4ADE80"></span> 안정 ${high.length}개</div>
-      <div class="sa-stat-chip sa-stat-medium"><span class="sa-stat-dot" style="background:#FACC15"></span> 소신 ${medium.length}개</div>
-      <div class="sa-stat-chip sa-stat-challenge"><span class="sa-stat-dot" style="background:#F87171"></span> 도전 ${challenge.length}개</div>
-      <div class="sa-stat-chip sa-stat-nodata"><span class="sa-stat-dot" style="background:var(--muted)"></span> 데이터없음 ${noData.length}개</div>
-    </div>`;
+    // 필터 바
+    html += renderSAFilterBar(analysis);
+
+    // 필터 적용
+    const filteredResults = applyAnalysisFilters(all);
 
     // 각 그룹 렌더링 함수
     function renderUnivGroup(title, color, icon, items) {
@@ -3254,21 +3402,30 @@ function renderStudentAnalysisPage() {
       return g;
     }
 
-    html += renderUnivGroup('🟢 안정 지원', '#4ADE80', 'fa-check-circle', high);
-    html += renderUnivGroup('🟡 소신 지원', '#FACC15', 'fa-minus-circle', medium);
-    html += renderUnivGroup('🔴 도전 지원', '#F87171', 'fa-exclamation-circle', challenge);
-    if (noData.length > 0) {
-      html += renderUnivGroup('⚪ 커트라인 미공개', 'var(--muted)', 'fa-question-circle', noData);
+    // 필터 상태별 렌더링
+    if (_analysisState.saFilter.status !== '전체') {
+      const labels = { '안정': { t: '안정 지원', c: '#4ADE80', i: 'fa-check-circle' }, '소신': { t: '소신 지원', c: '#FACC15', i: 'fa-minus-circle' }, '도전': { t: '도전 지원', c: '#F87171', i: 'fa-exclamation-circle' }, '데이터없음': { t: '커트라인 미공개', c: 'var(--muted)', i: 'fa-question-circle' } };
+      const lb = labels[_analysisState.saFilter.status] || labels['안정'];
+      html += renderUnivGroup(lb.t, lb.c, lb.i, filteredResults);
+    } else {
+      const fHigh = filteredResults.filter(r => r.likelihood === 'high');
+      const fMedium = filteredResults.filter(r => r.likelihood === 'medium');
+      const fChallenge = filteredResults.filter(r => r.likelihood === 'challenge');
+      const fNoData = filteredResults.filter(r => r.likelihood === 'noData');
+      html += renderUnivGroup('안정 지원', '#4ADE80', 'fa-check-circle', fHigh);
+      html += renderUnivGroup('소신 지원', '#FACC15', 'fa-minus-circle', fMedium);
+      html += renderUnivGroup('도전 지원', '#F87171', 'fa-exclamation-circle', fChallenge);
+      if (fNoData.length > 0) html += renderUnivGroup('커트라인 미공개', 'var(--muted)', 'fa-question-circle', fNoData);
     }
 
-    // 분석 결과 총 개수 표시
-    const totalAnalyzed = high.length + medium.length + challenge.length + noData.length;
-    if (totalAnalyzed === 0) {
+    // 필터 결과 없음
+    if (filteredResults.length === 0) {
       html += `
       <div class="sa-empty-analysis" style="margin-top:16px">
-        <i class="fas fa-info-circle" style="color:var(--accent)"></i>
-        <div>분석 가능한 대학이 없습니다</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:6px">입력된 성적 조건에 해당하는 대학이 없습니다</div>
+        <i class="fas fa-search" style="color:var(--accent)"></i>
+        <div>조건에 맞는 대학이 없습니다</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">필터 조건을 변경하거나 검색어를 수정해보세요</div>
+        <button class="sa-warning-link sa-filter-reset-btn" style="margin-top:12px"><i class="fas fa-undo"></i> 필터 초기화</button>
       </div>`;
     }
 
@@ -3299,46 +3456,143 @@ function renderStudentAnalysisPage() {
   return html;
 }
 
-// 대학 상세 아코디언 내용
+// 대학 상세 아코디언 내용 (시뮬레이션 포함)
 function renderUnivDetail(u) {
+  const studentData = _analysisState._currentStudentData;
   let d = '<div class="sa-univ-detail">';
 
-  // 수능 환산 점수
+  // ── 섹션 1: 수능 반영 구조 ──
+  const weights = [];
+  if (u.korean_yn) weights.push({ name: '국어', ratio: u.korean_ratio || 0, points: u.korean_points || 0, color: '#00D4FF' });
+  if (u.math_yn) weights.push({ name: '수학', ratio: u.math_ratio || 0, points: u.math_points || 0, color: '#A78BFA' });
+  if (u.english_yn) weights.push({ name: '영어', ratio: u.english_ratio || 0, points: u.english_points || 0, color: '#FACC15', deduct: u.english_method === '감점' });
+  if (u.inquiry_yn) weights.push({ name: '탐구', ratio: u.inquiry_ratio || 0, points: u.inquiry_points || 0, color: '#4ADE80' });
+
   d += `
   <div class="sa-detail-section">
-    <div class="sa-detail-title">수능 환산</div>
+    <div class="sa-detail-title"><i class="fas fa-chart-pie" style="margin-right:6px;color:var(--accent)"></i>수능 반영 구조</div>
+    ${weights.length > 0 ? `<div class="sa-sim-weights">
+      ${weights.map(w => `<div class="sa-sim-weight-item">
+        <span class="sa-sim-weight-dot" style="background:${w.color}"></span>
+        <span class="sa-sim-weight-name">${w.name}</span>
+        <span class="sa-sim-weight-ratio">${w.deduct ? '감점' : Math.round(w.ratio * 100) + '%'}</span>
+        <span class="sa-sim-weight-pts" style="color:${w.color}">${w.points.toFixed(1)}</span>
+      </div>`).join('')}
+    </div>` : ''}
     <div class="sa-detail-row">
-      <span>내 환산점수</span><strong>${u.suneungScore.toFixed(1)}점</strong>
+      <span>내 수능 환산</span><strong style="color:var(--accent)">${u.suneungScore.toFixed(1)}점 / ${u.suneung_total || 0}점</strong>
     </div>
     ${u.cutlineSuneung > 0 ? `<div class="sa-detail-row"><span>수능 커트라인</span><strong>${u.cutlineSuneung.toFixed(1)}점</strong></div>
     <div class="sa-detail-row"><span>차이</span><strong style="color:${(u.diffSuneung || 0) >= 0 ? '#4ADE80' : '#F87171'}">${u.diffSuneung >= 0 ? '+' : ''}${(u.diffSuneung || 0).toFixed(1)}점</strong></div>` : ''}
   </div>`;
 
-  // 실기 추정
-  if (u.sports_events && u.sports_events.length > 0) {
+  // ── 섹션 2: 영어/한국사 등급 테이블 ──
+  const engTable = u.english_grade_scores || [];
+  const hksTable = u.hanksa_deductions || [];
+  const engGrade = studentData ? (studentData.english?.grade || 0) : 0;
+  const hksGrade = studentData ? (studentData.hanksa?.grade || 0) : 0;
+
+  if (engTable.length >= 9 || hksTable.length >= 9) {
+    d += `<div class="sa-detail-section">`;
+    if (engTable.length >= 9) {
+      d += `<div class="sa-detail-title"><i class="fas fa-globe" style="margin-right:6px;color:#FACC15"></i>영어 등급별 ${u.english_method === '감점' ? '감점' : '점수'}<span style="font-size:10px;color:var(--muted);font-weight:500;margin-left:6px">내 ${engGrade}등급</span></div>
+      <div class="sa-grade-table">
+        ${engTable.map((v, i) => `<div class="sa-grade-cell ${i === engGrade - 1 ? 'sa-grade-active sa-grade-eng' : ''}">
+          <div class="sa-grade-num">${i + 1}</div><div class="sa-grade-val">${v}</div>
+        </div>`).join('')}
+      </div>`;
+    }
+    if (hksTable.length >= 9) {
+      d += `<div class="sa-detail-title" style="margin-top:12px"><i class="fas fa-flag" style="margin-right:6px;color:#FB923C"></i>한국사 등급별 감점<span style="font-size:10px;color:var(--muted);font-weight:500;margin-left:6px">내 ${hksGrade}등급</span></div>
+      <div class="sa-grade-table">
+        ${hksTable.map((v, i) => `<div class="sa-grade-cell ${i === hksGrade - 1 ? 'sa-grade-active sa-grade-hks' : ''}">
+          <div class="sa-grade-num">${i + 1}</div><div class="sa-grade-val">${v}</div>
+        </div>`).join('')}
+      </div>`;
+    }
+    d += `</div>`;
+  }
+
+  // ── 섹션 3: 실기 시뮬레이터 ──
+  if (u.sports_events && u.sports_events.length > 0 && studentData && (u.sports_total || 0) > 0) {
+    const simOverrides = (_analysisState.saSimOverrides[u.id] || {}).sports || {};
+    const sportsTotal = u.sports_total || 0;
+    let totalR = 0, validCnt = 0;
+    const simPerEvent = [];
+
+    for (const eventName of u.sports_events) {
+      const field = findSportsField(eventName);
+      const baseVal = studentData.sports[eventName] || studentData.sports[field.key] || 0;
+      const val = simOverrides[eventName] !== undefined ? simOverrides[eventName] : baseVal;
+      let ratio = 0;
+      if (val > 0 && field.unit !== '-') {
+        if (field.unit === '점' && field.max > 0) {
+          ratio = Math.min(val / field.max, 1);
+        } else {
+          const range = field.max - field.min;
+          if (range > 0) {
+            ratio = field.direction === 'lower'
+              ? Math.max(0, Math.min(1, (field.max - val) / range))
+              : Math.max(0, Math.min(1, (val - field.min) / range));
+          }
+        }
+        totalR += ratio;
+        validCnt++;
+      }
+      simPerEvent.push({ event: eventName, val, baseVal, ratio, field });
+    }
+    const simSportsRatio = validCnt > 0 ? totalR / validCnt : 0;
+    const simSportsScore = sportsTotal > 0 ? Math.round(simSportsRatio * sportsTotal * 10) / 10 : 0;
+    const simTotalScore = u.suneungScore + simSportsScore;
+    const simDiffTotal = u.cutlineTotal > 0 ? Math.round((simTotalScore - u.cutlineTotal) * 10) / 10 : null;
+    const hasOverrides = Object.keys(simOverrides).length > 0;
+
     d += `
-    <div class="sa-detail-section">
-      <div class="sa-detail-title">실기 추정 (${u.sports_events.length}종목)</div>
-      <div class="sa-detail-row"><span>추정 실기점수</span><strong>${u.sportsScore.toFixed(1)}점 / ${u.sports_total || 0}점</strong></div>
-      <div class="sa-detail-row"><span>달성률</span><strong>${(u.sportsRatio * 100).toFixed(0)}%</strong></div>
-      <div class="sa-detail-events">
-        ${u.perEvent.map(e => {
+    <div class="sa-detail-section sa-sim-section">
+      <div class="sa-detail-title" style="display:flex;align-items:center">
+        <i class="fas fa-sliders-h" style="margin-right:6px;color:#A78BFA"></i>
+        실기 시뮬레이터 (${u.sports_events.length}종목)
+        ${hasOverrides ? `<button class="sa-sim-reset-btn" data-sa-sim-reset="${u.id}"><i class="fas fa-undo"></i> 초기화</button>` : ''}
+      </div>
+      <div class="sa-sim-sliders">
+        ${simPerEvent.map(e => {
+          const dec = e.field.step < 1 ? 1 : 0;
           const pct = (e.ratio * 100).toFixed(0);
-          return `<div class="sa-event-item">
-            <span class="sa-event-name">${e.event}</span>
-            <span class="sa-event-val">${e.val > 0 ? e.val + (e.field.unit || '') : '미입력'}</span>
-            <div class="sa-event-bar"><div class="sa-event-bar-fill" style="width:${pct}%"></div></div>
-            <span class="sa-event-pct">${pct}%</span>
+          const hasDiff = e.baseVal > 0 && Math.abs(e.val - e.baseVal) > (e.field.step < 1 ? 0.05 : 0.5);
+          const isGood = e.field.direction === 'lower' ? e.val < e.baseVal : e.val > e.baseVal;
+          const dColor = hasDiff ? (isGood ? '#4ADE80' : '#F87171') : '#A78BFA';
+
+          return `<div class="sa-sim-slider-item">
+            <div class="sa-sim-slider-header">
+              <span class="sa-sim-slider-name">${e.event}</span>
+              <span class="sa-sim-slider-val" style="color:${e.val > 0 ? dColor : 'var(--muted)'}">${Number(e.val).toFixed(dec)}${e.field.unit === '-' ? '' : e.field.unit}</span>
+              <span class="sa-sim-slider-diff" style="color:${dColor};${hasDiff ? '' : 'display:none'}">(${e.val > e.baseVal ? '+' : ''}${(e.val - e.baseVal).toFixed(dec)})</span>
+            </div>
+            <input type="range" min="${e.field.min}" max="${e.field.max}" step="${e.field.step}" value="${e.val}"
+              data-sa-sim-slider="${e.event}" data-sa-sim-univ="${u.id}" data-sa-sim-base="${e.baseVal}" data-sa-sim-dir="${e.field.direction || 'higher'}"
+              class="sa-sim-range" style="accent-color:${dColor}">
+            <div class="sa-sim-slider-labels">
+              <span>${e.field.min}${e.field.unit === '-' ? '' : e.field.unit}</span>
+              <span>달성률 ${pct}%</span>
+              <span>${e.field.max}${e.field.unit === '-' ? '' : e.field.unit}</span>
+            </div>
           </div>`;
         }).join('')}
+      </div>
+      <div class="sa-sim-result" id="sa-sim-result-${u.id}">
+        <div class="sa-sim-result-row"><span>수능 환산</span><strong style="color:var(--accent)">${u.suneungScore.toFixed(1)}점</strong></div>
+        <div class="sa-sim-result-row"><span>실기 추정</span><strong style="color:#A78BFA">${simSportsScore.toFixed(1)}점 / ${sportsTotal}점 (${(simSportsRatio * 100).toFixed(0)}%)</strong></div>
+        <div class="sa-sim-result-row sa-sim-result-total"><span>추정 총점</span><strong>${simTotalScore.toFixed(1)}점</strong></div>
+        ${u.cutlineTotal > 0 ? `<div class="sa-sim-result-row"><span>총 커트라인</span><strong>${u.cutlineTotal.toFixed(1)}점</strong></div>
+        <div class="sa-sim-result-row"><span>차이</span><strong style="color:${simDiffTotal >= 0 ? '#4ADE80' : '#F87171'}">${simDiffTotal >= 0 ? '+' : ''}${simDiffTotal.toFixed(1)}점</strong></div>` : ''}
       </div>
     </div>`;
   }
 
-  // 전형 정보
+  // ── 섹션 4: 전형 정보 ──
   d += `
   <div class="sa-detail-section">
-    <div class="sa-detail-title">전형 정보</div>
+    <div class="sa-detail-title"><i class="fas fa-info-circle" style="margin-right:6px"></i>전형 정보</div>
     ${u.score_method ? `<div class="sa-detail-row"><span>성적 반영</span><span>${u.score_method}</span></div>` : ''}
     ${u.capacity ? `<div class="sa-detail-row"><span>모집인원</span><span>${u.capacity}명</span></div>` : ''}
     ${u.competition_rate ? `<div class="sa-detail-row"><span>경쟁률</span><span>${u.competition_rate}:1</span></div>` : ''}
@@ -3346,17 +3600,6 @@ function renderUnivDetail(u) {
     ${u.suneung_ratio ? `<div class="sa-detail-row"><span>수능 비율</span><span>${Math.round(u.suneung_ratio * 100)}%</span></div>` : ''}
     ${u.sports_ratio ? `<div class="sa-detail-row"><span>실기 비율</span><span>${Math.round(u.sports_ratio * 100)}%</span></div>` : ''}
   </div>`;
-
-  // 총점 요약
-  if (u.cutlineTotal > 0) {
-    d += `
-    <div class="sa-detail-section">
-      <div class="sa-detail-title">총점 비교</div>
-      <div class="sa-detail-row"><span>내 추정 총점</span><strong>${u.totalScore.toFixed(1)}점</strong></div>
-      <div class="sa-detail-row"><span>총 커트라인</span><strong>${u.cutlineTotal.toFixed(1)}점</strong></div>
-      <div class="sa-detail-row"><span>차이</span><strong style="color:${(u.diffTotal || 0) >= 0 ? '#4ADE80' : '#F87171'}">${u.diffTotal >= 0 ? '+' : ''}${(u.diffTotal || 0).toFixed(1)}점</strong></div>
-    </div>`;
-  }
 
   d += '</div>';
   return d;
@@ -6821,6 +7064,7 @@ function bindEvents() {
       }
       _analysisState.conditionSheet = false;
       _analysisState.expandedUnivId = null;
+      _analysisState.saSimOverrides = {};
       showToast('분석 조건이 변경되었습니다');
       render();
     });
@@ -6831,6 +7075,89 @@ function bindEvents() {
     el.addEventListener('click', () => {
       const id = parseInt(el.dataset.toggleUniv);
       _analysisState.expandedUnivId = _analysisState.expandedUnivId === id ? null : id;
+      render();
+    });
+  });
+
+  // ═══ 분석 필터 바 이벤트 ═══
+  document.querySelectorAll('[data-sa-status]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = btn.dataset.saStatus;
+      _analysisState.saFilter.status = (_analysisState.saFilter.status === val && val !== '전체') ? '전체' : val;
+      _analysisState.expandedUnivId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-sa-group]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _analysisState.saFilter.group = btn.dataset.saGroup;
+      _analysisState.expandedUnivId = null;
+      render();
+    });
+  });
+
+  document.querySelectorAll('[data-sa-filter]').forEach(el => {
+    if (el.dataset.saFilter === 'search') {
+      el.addEventListener('input', () => {
+        _analysisState.saFilter.search = el.value;
+        _debouncedSASearch();
+      });
+    } else {
+      el.addEventListener('change', () => {
+        _analysisState.saFilter[el.dataset.saFilter] = el.value;
+        _analysisState.expandedUnivId = null;
+        render();
+      });
+    }
+  });
+
+  const saResetBtn = document.querySelector('.sa-filter-reset-btn');
+  if (saResetBtn) {
+    saResetBtn.addEventListener('click', () => {
+      _analysisState.saFilter = { status: '전체', group: '전체', location: '전체', sort: 'diff', search: '' };
+      render();
+    });
+  }
+
+  // ═══ 실기 시뮬레이션 슬라이더 이벤트 ═══
+  document.querySelectorAll('[data-sa-sim-slider]').forEach(slider => {
+    const eventName = slider.dataset.saSimSlider;
+    const univId = parseInt(slider.dataset.saSimUniv);
+    const baseVal = parseFloat(slider.dataset.saSimBase) || 0;
+    const direction = slider.dataset.saSimDir || 'higher';
+
+    slider.addEventListener('input', () => {
+      const newVal = parseFloat(slider.value);
+      if (!_analysisState.saSimOverrides[univId]) _analysisState.saSimOverrides[univId] = { sports: {} };
+      _analysisState.saSimOverrides[univId].sports[eventName] = newVal;
+
+      const item = slider.closest('.sa-sim-slider-item');
+      if (item) {
+        const field = findSportsField(eventName);
+        const dec = field.step < 1 ? 1 : 0;
+        const hasDiff = baseVal > 0 && Math.abs(newVal - baseVal) > (field.step < 1 ? 0.05 : 0.5);
+        const isGood = direction === 'lower' ? newVal < baseVal : newVal > baseVal;
+        const dColor = hasDiff ? (isGood ? '#4ADE80' : '#F87171') : '#A78BFA';
+
+        const valEl = item.querySelector('.sa-sim-slider-val');
+        if (valEl) { valEl.textContent = `${Number(newVal).toFixed(dec)}${field.unit === '-' ? '' : field.unit}`; valEl.style.color = newVal > 0 ? dColor : 'var(--muted)'; }
+        const diffEl = item.querySelector('.sa-sim-slider-diff');
+        if (diffEl) {
+          if (hasDiff) { diffEl.textContent = `(${newVal > baseVal ? '+' : ''}${(newVal - baseVal).toFixed(dec)})`; diffEl.style.color = dColor; diffEl.style.display = ''; }
+          else { diffEl.style.display = 'none'; }
+        }
+        slider.style.accentColor = dColor;
+      }
+      recalcSASimResult(univId);
+    });
+  });
+
+  document.querySelectorAll('[data-sa-sim-reset]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const univId = parseInt(btn.dataset.saSimReset);
+      delete _analysisState.saSimOverrides[univId];
       render();
     });
   });
