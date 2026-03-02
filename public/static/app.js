@@ -3166,43 +3166,14 @@ function renderStudentAnalysisPage() {
     </div>
   </div>`;
 
-  // 4) 대학 분석 목록
-  if (isLoading) {
-    html += `
-    <div class="sa-loading">
-      <div class="sa-loading-spinner"></div>
-      <div>230+ 대학 데이터 불러오는 중...</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:8px">잠시만 기다려주세요</div>
-    </div>`;
-  } else if (_analysisState.error && !univs) {
-    html += `
-    <div class="sa-empty-analysis">
-      <i class="fas fa-exclamation-circle" style="color:#F87171"></i>
-      <div>대학 데이터를 불러올 수 없습니다</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:6px">네트워크 연결을 확인하고 다시 시도해주세요</div>
-      <button class="sa-warning-link" id="btn-retry-univ-load" style="margin-top:12px"><i class="fas fa-sync-alt"></i> 다시 시도</button>
-    </div>`;
-  } else if (!univs) {
-    html += `
-    <div class="sa-loading">
-      <div class="sa-loading-spinner"></div>
-      <div>대학 데이터 준비 중...</div>
-    </div>`;
-  } else if (!mockData) {
+  // 4) 대학 분석 목록 — 항상 placeholder 출력, 비동기로 결과 채움
+  if (!mockData) {
     html += `
     <div class="sa-empty-analysis">
       <i class="fas fa-edit"></i>
       <div>시험 성적을 먼저 입력해주세요</div>
       <div style="font-size:12px;color:var(--muted);margin-top:6px">나의 기록 탭에서 수능/모의고사 성적을 입력하면<br>대학별 합격 가능성 분석이 시작됩니다</div>
       <button class="sa-warning-link" id="btn-goto-records-2" style="margin-top:12px"><i class="fas fa-arrow-right"></i> 성적 입력하러 가기</button>
-    </div>`;
-  } else if (analysisError) {
-    html += `
-    <div class="sa-empty-analysis">
-      <i class="fas fa-exclamation-circle" style="color:#F87171"></i>
-      <div>분석 중 오류가 발생했습니다</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:6px">${escapeHtml(analysisError)}</div>
-      <button class="sa-warning-link" id="btn-retry-univ-load" style="margin-top:12px"><i class="fas fa-sync-alt"></i> 다시 시도</button>
     </div>`;
   } else if (analysis) {
     const { high, medium, challenge, noData } = analysis;
@@ -3280,6 +3251,14 @@ function renderStudentAnalysisPage() {
 
     // 5) 맞춤 조언 카드
     html += renderAnalysisAdvice(analysis, studentData);
+  } else if (mockData) {
+    // mockData는 있지만 analysis가 아직 없음 (대학 데이터 로딩 중이거나 에러)
+    html += `
+    <div class="sa-loading" id="sa-analysis-loading-zone">
+      <div class="sa-loading-spinner"></div>
+      <div>230+ 대학 합격 가능성 분석 중...</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">잠시만 기다려주세요</div>
+    </div>`;
   }
 
   // 조건 변경 바텀시트
@@ -6715,43 +6694,34 @@ function bindEvents() {
   }
 
   // ═══ 학생 분석 페이지 이벤트 ═══
-  // 대학 데이터 자동 로드 (학생 로그인 시 즉시, 분석 탭 아니어도 미리 캐싱)
-  // 또한 분석 탭에 있을 때 데이터가 없으면 강제 로드
-  const needsUnivLoad = isStudent() && !_analysisState.universities && !_analysisState.loading;
-  if (needsUnivLoad && !_analysisState.error) {
+  // 대학 데이터 자동 로드: 학생이 로그인된 상태에서 대학 데이터가 없으면 항상 로드
+  if (isStudent() && !_analysisState.universities && !_analysisState.loading) {
     _analysisState.loading = true;
-    // 분석 탭이면 로딩 UI 즉시 갱신
-    const saLoadingEl = document.querySelector('.sa-loading');
-    if (saLoadingEl) {
-      saLoadingEl.innerHTML = '<div class="sa-loading-spinner"></div><div>230+ 대학 분석 중...</div>';
-    }
+    _analysisState.error = null;
     fetch(API + '/api/universities')
       .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(data => {
-        _analysisState.universities = data.universities || [];
+        const univList = data.universities || data || [];
+        _analysisState.universities = Array.isArray(univList) ? univList : [];
         _analysisState.loading = false;
         _analysisState.error = null;
         console.log('[K1] 대학 데이터 로드 완료:', _analysisState.universities.length, '개');
-        // 분석 탭에 있을 때만 재렌더링 (다른 탭에서는 캐시만 저장)
-        if (state.mainTab === 'analysis') render();
+        render(); // 무조건 재렌더링 — 분석 결과 반영
       })
       .catch((err) => {
         console.error('[K1] 대학 데이터 로드 실패:', err);
-        _analysisState.universities = null; // null로 유지하여 재시도 가능
+        _analysisState.universities = null;
         _analysisState.loading = false;
-        _analysisState.error = '대학 데이터를 불러올 수 없습니다: ' + (err.message || '');
+        _analysisState.error = err.message || '로드 실패';
+        // 5초 후 자동 재시도
+        setTimeout(() => {
+          if (!_analysisState.universities && !_analysisState.loading) {
+            _analysisState.error = null; // 에러 리셋하여 재시도 트리거
+            render();
+          }
+        }, 5000);
         if (state.mainTab === 'analysis') render();
       });
-  }
-  // 분석 탭에서 에러가 있어도 자동 재시도 (사용자가 분석 탭에 있을 때)
-  if (isStudent() && state.mainTab === 'analysis' && _analysisState.error && !_analysisState.universities && !_analysisState.loading) {
-    // 에러 상태이지만 분석 탭에 와 있으므로 3초 후 자동 재시도
-    setTimeout(() => {
-      if (_analysisState.error && !_analysisState.universities && !_analysisState.loading) {
-        _analysisState.error = null;
-        render(); // 이 render에서 다시 fetch 트리거됨
-      }
-    }, 3000);
   }
 
   // 조건 변경 버튼

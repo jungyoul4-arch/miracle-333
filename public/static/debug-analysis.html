@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>분석 디버그</title>
+<style>
+body { font-family: sans-serif; padding: 20px; background: #111; color: #eee; }
+.step { margin: 8px 0; padding: 8px; border-radius: 6px; background: #222; }
+.ok { border-left: 3px solid #4ADE80; }
+.fail { border-left: 3px solid #F87171; }
+.wait { border-left: 3px solid #FACC15; }
+pre { background: #333; padding: 8px; border-radius: 4px; overflow: auto; font-size: 12px; }
+button { padding: 10px 20px; margin: 5px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.btn-primary { background: #00D2D3; color: #000; }
+.btn-danger { background: #F87171; color: #fff; }
+</style>
+</head>
+<body>
+<h2>🔬 K1 분석 연동 디버그 테스트</h2>
+<div id="log"></div>
+<div id="actions" style="margin-top:20px"></div>
+<script>
+const log = document.getElementById('log');
+const actions = document.getElementById('actions');
+
+function addStep(text, cls) {
+  const d = document.createElement('div');
+  d.className = 'step ' + cls;
+  d.innerHTML = text;
+  log.appendChild(d);
+}
+
+async function runFullTest() {
+  log.innerHTML = '';
+  
+  // 1. localStorage 상태 확인
+  addStep('<b>1. localStorage 확인</b>', 'wait');
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('k1-') || k.startsWith('mockExam'));
+  addStep(`localStorage 키 수: ${keys.length}<pre>${keys.join('\n')}</pre>`, keys.length > 0 ? 'ok' : 'fail');
+  
+  // 2. 세션 데이터
+  const sessions = JSON.parse(localStorage.getItem('k1-sessions') || '[]');
+  addStep(`<b>2. 세션 데이터</b>: ${sessions.length}개 세션`, sessions.length > 0 ? 'ok' : 'fail');
+  
+  // 3. 모의고사 데이터
+  const mockKeys = Object.keys(localStorage).filter(k => k.startsWith('mockExam'));
+  addStep(`<b>3. 모의고사 데이터</b>: ${mockKeys.length}개`, mockKeys.length > 0 ? 'ok' : 'fail');
+  if (mockKeys.length > 0) {
+    const sample = JSON.parse(localStorage.getItem(mockKeys[0]));
+    addStep(`  첫 번째: ${mockKeys[0]}<pre>${JSON.stringify(sample, null, 2).substring(0, 300)}</pre>`, 'ok');
+  }
+  
+  // 4. 현재 사용자
+  const user = JSON.parse(localStorage.getItem('k1-current-user') || 'null');
+  addStep(`<b>4. 현재 사용자</b>: ${user ? user.studentName + ' ('+user.studentId+')' : '없음 (로그인 필요)'}`, user ? 'ok' : 'fail');
+  
+  // 5. 대학 API 호출
+  addStep('<b>5. /api/universities 호출 중...</b>', 'wait');
+  try {
+    const resp = await fetch('/api/universities');
+    const data = await resp.json();
+    addStep(`  대학 API 결과: ${data.count}개 대학, HTTP ${resp.status}`, data.count > 0 ? 'ok' : 'fail');
+  } catch(e) {
+    addStep(`  대학 API 에러: ${e.message}`, 'fail');
+  }
+  
+  // 6. 학생 데이터로 분석 API 호출
+  if (mockKeys.length > 0) {
+    const mockData = JSON.parse(localStorage.getItem(mockKeys[0]));
+    const studentPayload = {
+      korean: { subject: mockData.korean?.subject || '', standard: mockData.korean?.standardScore || 0, percentile: mockData.korean?.percentile || 0, grade: mockData.korean?.grade || 5 },
+      math: { subject: mockData.math?.subject || '', standard: mockData.math?.standardScore || 0, percentile: mockData.math?.percentile || 0, grade: mockData.math?.grade || 5 },
+      english: { grade: mockData.english?.grade || 5 },
+      inquiry1: { subject: mockData.inquiry?.inquiry1?.subject || '', standard: mockData.inquiry?.inquiry1?.standardScore || 0, percentile: mockData.inquiry?.inquiry1?.percentile || 0, grade: 5 },
+      inquiry2: { subject: mockData.inquiry?.inquiry2?.subject || '', standard: mockData.inquiry?.inquiry2?.standardScore || 0, percentile: mockData.inquiry?.inquiry2?.percentile || 0, grade: 5 },
+      hanksa: { grade: mockData.koreanHistory?.grade || 4 },
+      sports: {}
+    };
+    
+    addStep('<b>6. 서버 분석 API 호출 중...</b>', 'wait');
+    try {
+      const resp = await fetch('/api/calculate/all', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ student: studentPayload })
+      });
+      const data = await resp.json();
+      const results = data.results || [];
+      addStep(`  서버 분석 결과: ${results.length}개 대학 분석 완료`, results.length > 0 ? 'ok' : 'fail');
+      if (results.length > 0) {
+        addStep(`  첫 번째: ${results[0].university} - ${results[0].status} (diff: ${results[0].diff})`, 'ok');
+      }
+    } catch(e) {
+      addStep(`  서버 분석 에러: ${e.message}`, 'fail');
+    }
+  }
+  
+  // 7. 결론
+  addStep('<hr><b>📋 결론</b>', 'wait');
+  if (!user) {
+    addStep('❌ 로그인이 필요합니다. 메인 페이지에서 kimminsu / 1234로 로그인하세요.', 'fail');
+  } else if (mockKeys.length === 0) {
+    addStep('❌ 모의고사 데이터가 없습니다. 나의기록 탭에서 성적을 입력하세요.', 'fail');
+  } else {
+    addStep('✅ 데이터 연동에 필요한 모든 조건이 충족되었습니다.', 'ok');
+    addStep('분석 탭을 열면 결과가 나와야 합니다. 안 나오면 아래 "강제 새로고침" 버튼을 눌러보세요.', 'ok');
+  }
+  
+  actions.innerHTML = `
+    <button class="btn-primary" onclick="window.location.href='/?auto-login=kimminsu&tab=analysis'">kimminsu로 자동 분석</button>
+    <button class="btn-primary" onclick="window.location.href='/'">메인 페이지</button>
+    <button class="btn-danger" onclick="localStorage.clear(); location.reload()">localStorage 초기화</button>
+  `;
+}
+
+runFullTest();
+</script>
+</body>
+</html>
