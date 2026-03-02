@@ -3008,6 +3008,7 @@ function renderStudentAnalysisPage() {
   let myRecord = selectedObj ? getMyRecord(sel) : null;
   let mockData = selectedObj ? loadMockExam(cu.studentId, sel, month) : null;
 
+
   // ── 자동 모의고사 데이터 탐색 ──
   // 현재 세션+월 조합에 데이터가 없으면, 다른 월과 다른 세션에서 자동 탐색
   if (!mockData && sessions.length > 0) {
@@ -3054,18 +3055,24 @@ function renderStudentAnalysisPage() {
 
   // 분석 결과 계산
   let analysis = null;
+  let analysisError = null;
   if (univs && univs.length > 0 && mockData) {
-    // 임시로 state.student를 학생 데이터로 설정 (generateCutlineAdvice가 state.student를 사용)
-    const origStudent = state.student;
-    const origSimSuneung = state.simSuneung;
-    const origSimSports = state.simSports;
-    state.student = studentData;
-    state.simSuneung = null;
-    state.simSports = studentData.sports;
-    analysis = analyzeUniversitiesForStudent(univs, studentData);
-    state.student = origStudent;
-    state.simSuneung = origSimSuneung;
-    state.simSports = origSimSports;
+    try {
+      // 임시로 state.student를 학생 데이터로 설정 (generateCutlineAdvice가 state.student를 사용)
+      const origStudent = state.student;
+      const origSimSuneung = state.simSuneung;
+      const origSimSports = state.simSports;
+      state.student = studentData;
+      state.simSuneung = null;
+      state.simSports = studentData.sports;
+      analysis = analyzeUniversitiesForStudent(univs, studentData);
+      state.student = origStudent;
+      state.simSuneung = origSimSuneung;
+      state.simSports = origSimSports;
+    } catch (err) {
+      console.error('[K1] 대학 분석 중 오류:', err);
+      analysisError = err.message || '분석 중 오류가 발생했습니다';
+    }
   }
 
   // ── HTML 생성 ──
@@ -3147,13 +3154,22 @@ function renderStudentAnalysisPage() {
     html += `
     <div class="sa-loading">
       <div class="sa-loading-spinner"></div>
-      <div>230+ 대학 분석 중...</div>
+      <div>230+ 대학 데이터 불러오는 중...</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">잠시만 기다려주세요</div>
+    </div>`;
+  } else if (_analysisState.error && !univs) {
+    html += `
+    <div class="sa-empty-analysis">
+      <i class="fas fa-exclamation-circle" style="color:#F87171"></i>
+      <div>대학 데이터를 불러올 수 없습니다</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">네트워크 연결을 확인하고 다시 시도해주세요</div>
+      <button class="sa-warning-link" id="btn-retry-univ-load" style="margin-top:12px"><i class="fas fa-sync-alt"></i> 다시 시도</button>
     </div>`;
   } else if (!univs) {
     html += `
     <div class="sa-loading">
       <div class="sa-loading-spinner"></div>
-      <div>대학 데이터 불러오는 중...</div>
+      <div>대학 데이터 준비 중...</div>
     </div>`;
   } else if (!mockData) {
     html += `
@@ -3162,6 +3178,14 @@ function renderStudentAnalysisPage() {
       <div>시험 성적을 먼저 입력해주세요</div>
       <div style="font-size:12px;color:var(--muted);margin-top:6px">나의 기록 탭에서 수능/모의고사 성적을 입력하면<br>대학별 합격 가능성 분석이 시작됩니다</div>
       <button class="sa-warning-link" id="btn-goto-records-2" style="margin-top:12px"><i class="fas fa-arrow-right"></i> 성적 입력하러 가기</button>
+    </div>`;
+  } else if (analysisError) {
+    html += `
+    <div class="sa-empty-analysis">
+      <i class="fas fa-exclamation-circle" style="color:#F87171"></i>
+      <div>분석 중 오류가 발생했습니다</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">${escapeHtml(analysisError)}</div>
+      <button class="sa-warning-link" id="btn-retry-univ-load" style="margin-top:12px"><i class="fas fa-sync-alt"></i> 다시 시도</button>
     </div>`;
   } else if (analysis) {
     const { high, medium, challenge, noData } = analysis;
@@ -6660,10 +6684,10 @@ function bindEvents() {
   }
 
   // ═══ 학생 분석 페이지 이벤트 ═══
-  // 대학 데이터 자동 로드 (분석 탭 진입 시)
-  if (state.mainTab === 'analysis' && isStudent() && !_analysisState.universities && !_analysisState.loading) {
+  // 대학 데이터 자동 로드 (학생 로그인 시 즉시, 분석 탭 아니어도 미리 캐싱)
+  if (isStudent() && !_analysisState.universities && !_analysisState.loading && !_analysisState.error) {
     _analysisState.loading = true;
-    // 로딩 UI 즉시 갱신 (스피너 표시)
+    // 분석 탭이면 로딩 UI 즉시 갱신
     const saLoadingEl = document.querySelector('.sa-loading');
     if (saLoadingEl) {
       saLoadingEl.innerHTML = '<div class="sa-loading-spinner"></div><div>230+ 대학 분석 중...</div>';
@@ -6673,15 +6697,17 @@ function bindEvents() {
       .then(data => {
         _analysisState.universities = data.universities || [];
         _analysisState.loading = false;
+        _analysisState.error = null;
         console.log('[K1] 대학 데이터 로드 완료:', _analysisState.universities.length, '개');
-        render();
+        // 분석 탭에 있을 때만 재렌더링 (다른 탭에서는 캐시만 저장)
+        if (state.mainTab === 'analysis') render();
       })
       .catch((err) => {
         console.error('[K1] 대학 데이터 로드 실패:', err);
-        _analysisState.universities = [];
+        _analysisState.universities = null; // null로 유지하여 재시도 가능
         _analysisState.loading = false;
-        _analysisState.error = '대학 데이터를 불러올 수 없습니다';
-        render();
+        _analysisState.error = '대학 데이터를 불러올 수 없습니다: ' + (err.message || '');
+        if (state.mainTab === 'analysis') render();
       });
   }
 
@@ -6694,6 +6720,17 @@ function bindEvents() {
       const sheet = overlay && overlay.querySelector('.sa-condition-sheet');
       if (overlay) overlay.classList.add('active');
       if (sheet) sheet.classList.add('active');
+    });
+  }
+
+  // 대학 데이터 재시도 버튼
+  const btnRetry = document.getElementById('btn-retry-univ-load');
+  if (btnRetry) {
+    btnRetry.addEventListener('click', () => {
+      _analysisState.universities = null;
+      _analysisState.loading = false;
+      _analysisState.error = null;
+      render(); // render → bindEvents → 자동으로 fetch 재실행
     });
   }
 
@@ -6756,19 +6793,23 @@ function bindEvents() {
   });
 
   // "나의 기록으로 이동" 링크
-  const btnGotoRecords = document.getElementById('btn-goto-records') || document.getElementById('btn-goto-records-2');
-  if (btnGotoRecords) {
-    btnGotoRecords.addEventListener('click', () => {
-      state.mainTab = 'records';
-      localStorage.setItem('k1-main-tab', 'records');
-      render();
-    });
-  }
+  ['btn-goto-records', 'btn-goto-records-2'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      btn.addEventListener('click', () => {
+        state.mainTab = 'records';
+        localStorage.setItem('k1-main-tab', 'records');
+        render();
+      });
+    }
+  });
 
   // "나의 분석 결과 보기" 링크 (기록 페이지에서)
   const btnGotoAnalysis = document.getElementById('btn-goto-analysis-from-records');
   if (btnGotoAnalysis) {
     btnGotoAnalysis.addEventListener('click', () => {
+      // 기록 페이지에서 현재 선택된 세션+월을 분석 페이지에 전달
+      // selectedSession과 selectedExamMonth는 이미 state에 설정되어 있음
       state.mainTab = 'analysis';
       localStorage.setItem('k1-main-tab', 'analysis');
       render();
