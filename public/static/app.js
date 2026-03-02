@@ -2816,7 +2816,18 @@ function renderStudentRecordsPage() {
 
     <!-- 3-5. 분석 결과 바로가기 -->
     ${(() => {
-      const hasMock = loadMockExam(cu.studentId, sel, state.selectedExamMonth || '3월');
+      // 모든 세션+월 조합에서 모의고사 데이터 탐색
+      let hasMock = loadMockExam(cu.studentId, sel, state.selectedExamMonth || '3월');
+      if (!hasMock) {
+        const monthOrder = ['11월', '9월', '6월', '3월'];
+        for (const s of state.sessions.slice().sort((a,b) => b.number - a.number)) {
+          for (const m of monthOrder) {
+            hasMock = loadMockExam(cu.studentId, s.id, m);
+            if (hasMock) break;
+          }
+          if (hasMock) break;
+        }
+      }
       if (hasMock) {
         return `
         <div class="student-analysis-link-card" style="margin-top:16px;padding:16px;background:rgba(0,210,211,0.08);border:1px solid rgba(0,210,211,0.2);border-radius:12px;text-align:center">
@@ -2825,7 +2836,12 @@ function renderStudentRecordsPage() {
           <div style="font-size:11px;color:var(--muted);margin-top:6px">입력된 성적을 기반으로 대학별 합격 가능성을 분석합니다</div>
         </div>`;
       }
-      return '';
+      return `
+        <div class="student-analysis-link-card" style="margin-top:16px;padding:16px;background:rgba(250,204,21,0.06);border:1px solid rgba(250,204,21,0.15);border-radius:12px;text-align:center">
+          <div style="font-size:13px;color:var(--text);margin-bottom:4px"><i class="fas fa-info-circle" style="color:#FACC15"></i> 위에서 수능/모의고사 성적을 입력하면</div>
+          <div style="font-size:13px;color:var(--text);margin-bottom:8px">230개+ 대학의 합격 가능성을 분석할 수 있습니다</div>
+          <button class="sa-warning-link" id="btn-goto-analysis-from-records" style="display:inline-flex;align-items:center;gap:6px;padding:8px 20px;font-size:14px;font-weight:600;border-radius:8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);cursor:pointer"><i class="fas fa-chart-bar"></i> 나의 분석 결과</button>
+        </div>`;
     })()}
     `}
   </div>`;
@@ -3053,6 +3069,7 @@ function renderStudentAnalysisPage() {
   const univs = _analysisState.universities;
   const isLoading = _analysisState.loading;
 
+
   // 분석 결과 계산
   let analysis = null;
   let analysisError = null;
@@ -3248,6 +3265,17 @@ function renderStudentAnalysisPage() {
     html += renderUnivGroup('🔴 도전 지원', '#F87171', 'fa-exclamation-circle', challenge);
     if (noData.length > 0) {
       html += renderUnivGroup('⚪ 커트라인 미공개', 'var(--muted)', 'fa-question-circle', noData);
+    }
+
+    // 분석 결과 총 개수 표시
+    const totalAnalyzed = high.length + medium.length + challenge.length + noData.length;
+    if (totalAnalyzed === 0) {
+      html += `
+      <div class="sa-empty-analysis" style="margin-top:16px">
+        <i class="fas fa-info-circle" style="color:var(--accent)"></i>
+        <div>분석 가능한 대학이 없습니다</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">입력된 성적 조건에 해당하는 대학이 없습니다</div>
+      </div>`;
     }
 
     // 5) 맞춤 조언 카드
@@ -6354,17 +6382,20 @@ function bindEvents() {
 
       saveMockExam(cu.studentId, sid, month, data);
       state.studentMockEditing = false;
-      // 분석 결과 보기 안내 토스트 (저장 후 자동)
-      showToast(`${EXAM_MONTH_LABELS[month]} 성적이 저장되었습니다`);
       // 분석 결과 캐시 무효화 (새 데이터로 재분석 필요)
       if (_analysisState.universities) {
         // 대학 데이터가 이미 있으면 캐시는 유지하되 재렌더링 시 재분석됨
       }
       render();
-      // 저장 후 잠시 뒤 분석 결과 이동 안내
+      // 저장 후 분석 탭으로 이동 제안
+      showToast(`${EXAM_MONTH_LABELS[month]} 성적이 저장되었습니다. 분석 결과를 확인하세요!`, 'success');
       setTimeout(() => {
-        showToast('📊 나의 분석 결과 탭에서 대학별 합격 가능성을 확인하세요!');
-      }, 1500);
+        if (confirm('📊 성적이 저장되었습니다.\n지금 바로 분석 결과를 확인하시겠습니까?')) {
+          state.mainTab = 'analysis';
+          localStorage.setItem('k1-main-tab', 'analysis');
+          render();
+        }
+      }, 800);
     });
   }
 
@@ -6685,7 +6716,9 @@ function bindEvents() {
 
   // ═══ 학생 분석 페이지 이벤트 ═══
   // 대학 데이터 자동 로드 (학생 로그인 시 즉시, 분석 탭 아니어도 미리 캐싱)
-  if (isStudent() && !_analysisState.universities && !_analysisState.loading && !_analysisState.error) {
+  // 또한 분석 탭에 있을 때 데이터가 없으면 강제 로드
+  const needsUnivLoad = isStudent() && !_analysisState.universities && !_analysisState.loading;
+  if (needsUnivLoad && !_analysisState.error) {
     _analysisState.loading = true;
     // 분석 탭이면 로딩 UI 즉시 갱신
     const saLoadingEl = document.querySelector('.sa-loading');
@@ -6709,6 +6742,16 @@ function bindEvents() {
         _analysisState.error = '대학 데이터를 불러올 수 없습니다: ' + (err.message || '');
         if (state.mainTab === 'analysis') render();
       });
+  }
+  // 분석 탭에서 에러가 있어도 자동 재시도 (사용자가 분석 탭에 있을 때)
+  if (isStudent() && state.mainTab === 'analysis' && _analysisState.error && !_analysisState.universities && !_analysisState.loading) {
+    // 에러 상태이지만 분석 탭에 와 있으므로 3초 후 자동 재시도
+    setTimeout(() => {
+      if (_analysisState.error && !_analysisState.universities && !_analysisState.loading) {
+        _analysisState.error = null;
+        render(); // 이 render에서 다시 fetch 트리거됨
+      }
+    }, 3000);
   }
 
   // 조건 변경 버튼
@@ -7666,5 +7709,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   // 모의고사 편집 모드 초기화
   state.studentMockEditing = false;
+  
+  // URL 파라미터 기반 자동 로그인 (테스트용)
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoLogin = urlParams.get('auto-login');
+  const autoTab = urlParams.get('tab');
+  if (autoLogin && !isLoggedIn()) {
+    attemptLogin(autoLogin, '1234');
+  }
+  if (autoTab && ['records', 'analysis', 'report'].includes(autoTab)) {
+    state.mainTab = autoTab;
+  }
+  
   render();
 });
